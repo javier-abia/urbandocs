@@ -11,12 +11,45 @@ All numbers below are measured from those files, not estimated.
 
 ---
 
+## Validity caveat: this measures untuned docling, not docling's ceiling
+
+> The existing conversions "weren't made tweaking docling a lot, since I didn't know how to use it."
+> — owner, on [#3](https://github.com/javier-abia/urbandocs/issues/3)
+
+Everything below was measured against **default-settings markdown output**. That matters, because
+markdown is a *lossy view* of docling's actual output. `DoclingDocument` — the JSON export — carries
+several of the things this document reports as missing:
+
+| Reported as lost here | Present in `DoclingDocument` | Likely status |
+|---|---|---|
+| Heading hierarchy (all flat `##`) | `SectionHeaderItem.level`, plus a `HeadingHierarchyModel` (`heading_hierarchy_options`) assigning levels from PDF bookmarks → numbering → font style | Fixable |
+| Normative vs commentary | `TextItem.formatting` (bold/**italic**/underline) + `prov.bbox` for indent — and the commentary *is* italic + indented | Fixable |
+| Formulas | `do_formula_enrichment`, **off by default** | Fixable |
+| Table captions detached | `TableItem.captions` holds real caption references | Fixable by export choice |
+| Running headers as body text | Furniture / page-header labels exist in the model | Fixable |
+| Page anchors via `<!-- page-break -->` counting | `prov.page_no` + `bbox` per item — exact, no marker convention to track | Strictly better |
+| Private-use glyphs, split subscripts (`R d`) | PDF-level font/extraction artifacts | Unknown; may need OCR |
+
+So read the **"What it gets right"** findings as durable, and the **"Where it loses fidelity"**
+findings as *provisional* — they describe this conversion, not docling. [#13](https://github.com/javier-abia/urbandocs/issues/13)
+re-converts the corpus with a tuned pipeline and JSON export; these findings get re-checked against
+that output before [#4](https://github.com/javier-abia/urbandocs/issues/4) picks a substrate.
+
+The corpus-level facts are unaffected: HABITABILIDAD's missing text layer, the *existence* of a
+normative/commentary distinction in two documents, and the accepted loss of figure content all hold
+regardless of settings.
+
+---
+
 ## Summary
 
-Docling is a **good but lossy** substrate. It reliably gives page anchoring, table structure, and
-paragraph text. It does **not** give a section hierarchy, does not preserve the visual distinction
-between normative text and commentary, drops formulas and figures entirely, and cannot handle
-HABITABILIDAD at all without OCR.
+**As converted here** — default settings, markdown export — docling is a **good but lossy** substrate.
+It reliably gives page anchoring, table structure, and paragraph text. It does **not** give a section
+hierarchy, does not preserve the visual distinction between normative text and commentary, drops
+formulas and figures entirely, and cannot handle HABITABILIDAD at all without OCR. See the
+[validity caveat](#validity-caveat-this-measures-untuned-docling-not-doclings-ceiling) above: the
+losses are properties of *this conversion*, and most are plausibly recoverable by tuning the pipeline
+and exporting `DoclingDocument` JSON instead of markdown ([#13](https://github.com/javier-abia/urbandocs/issues/13)).
 
 **Scoping note from the owner (comment on [#3](https://github.com/javier-abia/urbandocs/issues/3)):**
 *"Images are complementary but not needed to extract information from them. They come together to help
