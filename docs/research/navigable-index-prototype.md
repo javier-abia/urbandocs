@@ -87,31 +87,82 @@ what is allowed to be found.** A lookup is:
 4. run one corpus-wide exact search on the query terms, and surface every hit
    that fell outside the routed set
 
-Step 4 is the safety net, and it is not theoretical. Simulating routing as
-literal matching against the digest, `altura libre` routes to 3 sections but the
-corpus holds 30 hits — **21 outside the routed set**, including
-`B.2.3 Espacios de comunicación`'s *"la altura libre mínima de estos espacios
-será de 2,40 m"*, a binding dimension for the exact question asked.
+### How well does routing actually work
 
-Widening the digest reduces the gap but never closes it:
+Measuring this correctly turns on **what part of a query is the routing key**.
+A permit question is not *"altura libre"* — it is *"altura libre **de los
+trasteros**"*. The entity is what localizes; the attribute is corpus-wide by
+construction, since every section of a dimensional norm talks about heights and
+widths. **Routing on the attribute measures nothing**: an early version of this
+prototype did exactly that, found `altura libre` reaching 3 of 30 hits, and
+concluded routing barely worked. It was measuring the wrong half of the query.
 
-| terms per section | hits missed by routing (of 30) | L2 total |
-|---|---|---|
-| 8 | 21 | 15.7K |
-| 16 | 10 | 23.3K |
-| 30 | 4 | 32.9K |
+Routed on the entity and verified on the attribute — eight realistic
+entity+attribute pairs, ground truth being every body item containing both:
+
+| query | sections routed | true provisions | found | recall |
+|---|---|---|---|---|
+| trastero + altura | 3 | 3 | 3 | 100% |
+| rampa + pendiente | 8 | 8 | 8 | 100% |
+| escalera + ancho | 15 | 19 | 17 | 89% |
+| estancia + superficie | 7 | 24 | 19 | 79% |
+| garaje + ancho | 8 | 4 | 3 | 75% |
+| cocina + superficie | 4 | 7 | 5 | 71% |
+| ascensor + dimensión | 15 | 6 | 3 | 50% |
+| **total** | | **71** | **58** | **82%** |
+
+**Routing works — 82% recall on an 8-term digest.** That is the number the design
+rests on.
+
+### Why the remaining 18% still needs a safety net
+
+Reading all 13 misses by hand — a judgement call, not a measurement — they split
+in two. About seven are **incidental mentions**: the entity appears but the
+section does not govern it (`C.8 Patio interior` naming estancias inside a
+definition). Nothing is lost by not routing there.
+
+The other six are **genuine cross-entity provisions** — a binding rule about
+entity A stated inside entity B's section, where A is absent from the digest:
+
+```
+[garaje] "Dimensiones de las rampas de circulación para vehículos"
+    digest: rampas radio rampa circulación tramos gráfico diferenciada rectos
+    → "El ancho libre mínimo de las rampas de circulación será de 3 m. Cuando
+       el garaje albergue más de 100 vehículos deberán existir dos…"
+
+[escalera] "B.2.1.2. Ámbito interior"
+    digest: cuadrado ascensor puntuales hueco planta resulte gráfico elementos
+    → "las áreas de acceso a ascensores y escaleras tendrán un ancho mínimo
+       entre paramentos de 1,50 m"
+```
+
+These are binding dimensions that a competent routing pass will not find, because
+the section is *about* something else. They are also precisely the shape that
+cross-document contradiction detection
+([#9](https://github.com/javier-abia/urbandocs/issues/9)) exists to catch: a rule
+in an unexpectedly-named section is not noise, it is the finding.
+
+Widening the digest is not the fix. Measured on attribute-routing, going from 8
+to 30 terms doubles the index and still leaves misses:
+
+| terms per section | L2 total |
+|---|---|
+| 8 | 15.7K |
+| 16 | 23.3K |
+| 30 | 32.9K |
 
 Two things follow. First, **routing recall is a tunable function of digest width
 that never reaches 1**, so a binding index would silently drop provisions at any
 size. Second, because verification decouples recall from index width, the index
 can stay at the cheap end — **8 terms per section** — and let the corpus-wide
-pass catch the tail. Paying 33K tokens to still miss 4 hits is worse than paying
-15.7K and missing none.
+pass catch the tail. Doubling the index to chase the last few percent buys less
+than a single `grep` does for free.
 
-The 21/30 figure is an upper bound on the real miss rate: an agent reading
-`A.3.1.1. Piezas situadas en plantas piso | altura libre pavimento techo` would
-route there, where literal matching does not. The curve's shape is what matters,
-not its exact height — and the shape says the safety net is load-bearing.
+Both figures are simulations of routing as literal matching against the digest,
+so both understate a real agent, which reads the digest rather than matching it.
+The 82% is therefore a floor. What the residual is made of — cross-entity
+provisions, not random noise — is the durable finding, and it is what makes the
+verification pass load-bearing rather than defensive.
 
 This matters most for cross-document contradiction detection
 ([#9](https://github.com/javier-abia/urbandocs/issues/9)), where a rule in an
