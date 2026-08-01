@@ -87,9 +87,28 @@ what is allowed to be found.** A lookup is:
 4. run one corpus-wide exact search on the query terms, and surface every hit
    that fell outside the routed set
 
-### How well does routing actually work
+### What the numbers below do and do not measure
 
-Measuring this correctly turns on **what part of a query is the routing key**.
+They measure **index reachability**: what fraction of the text items mentioning a
+thing sit in sections the index would route to. That is a useful sanity check on
+the digest, and it is *not* a measure of whether the system answers a question.
+
+The unit that matters is the **concept**, not the coincidence. A question like
+*"¿qué altura libre deben tener las rampas de un garaje?"* has one correct
+answer: the complete set of provisions an architect would cite. Missing three
+incidental mentions of `ascensor` costs nothing if the governing provision came
+back; recovering nine matches out of ten is a **failure** if the tenth was the
+qualifier that changes the rule. Coincidence-recall gives partial credit where
+the domain gives none.
+
+So the figures below justify the *index design* — they cannot and do not
+establish retrieval correctness. That requires a gold set of real questions with
+human-judged, all-or-nothing answers, which is tracked separately as
+[#30](https://github.com/javier-abia/urbandocs/issues/30).
+
+### How well does routing reach the text
+
+Measuring even this correctly turns on **what part of a query is the routing key**.
 A permit question is not *"altura libre"* — it is *"altura libre **de los
 trasteros**"*. The entity is what localizes; the attribute is corpus-wide by
 construction, since every section of a dimensional norm talks about heights and
@@ -160,9 +179,17 @@ than a single `grep` does for free.
 
 Both figures are simulations of routing as literal matching against the digest,
 so both understate a real agent, which reads the digest rather than matching it.
-The 82% is therefore a floor. What the residual is made of — cross-entity
-provisions, not random noise — is the durable finding, and it is what makes the
-verification pass load-bearing rather than defensive.
+The 82% is therefore a floor — and, per the caveat above, a floor on the wrong
+quantity.
+
+**What survives at the concept level is the residual's shape.** Cross-entity
+provisions are not a scoring artifact: the garage ramp width really is the
+answer to *"¿qué ancho deben tener las rampas de un garaje?"*, and it really does
+live in a section whose digest contains no `garaje`. That is a concept-level
+failure of routing, not a missed coincidence, and it is why the verification pass
+is load-bearing rather than defensive. Whether it is the *only* such shape is
+exactly what the gold set in
+[#30](https://github.com/javier-abia/urbandocs/issues/30) has to find out.
 
 This matters most for cross-document contradiction detection
 ([#9](https://github.com/javier-abia/urbandocs/issues/9)), where a rule in an
