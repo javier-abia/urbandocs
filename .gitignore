@@ -8,3 +8,6 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Derived navigable index (rebuilt by scripts/build_navigable_index.py)
+index/
