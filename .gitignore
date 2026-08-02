@@ -11,3 +11,8 @@ wheels/
 
 # Derived navigable index (rebuilt by scripts/build_navigable_index.py)
 index/
+
+# Normativa corpus: source PDFs plus their docling/pdftotext conversions (~26M).
+# Kept out of the repo; docs/research/ cites paths under here, so obtain the PDFs
+# and re-run the conversion pipeline locally to reproduce those measurements.
+documentos/
