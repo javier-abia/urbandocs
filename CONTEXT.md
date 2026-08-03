@@ -47,6 +47,11 @@ The page number a page prints on itself. Absent on some pages, and offset from
 the PDF page in some documents (`Pág. 36525` on DOG_2025's first page). Carried
 for reading aloud only — architects navigate by PDF page, so nothing derives it.
 
+**Disclosure**:
+A statement attached to returned evidence about how faithfully it was extracted
+— never a filter, and never a reason to withhold a passage. The engine discloses
+and still returns; deciding what the damage means is the architect's.
+
 **Pointer**:
 A phrase inside a provision that names another addressable unit by its printed
 cite (`según la tabla 1.2`, `lo regulado en el anexo II`). *In-corpus* when the
