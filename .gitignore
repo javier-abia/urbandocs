@@ -9,10 +9,29 @@ wheels/
 # Virtual environments
 .venv
 
-# Derived navigable index (rebuilt by scripts/build_navigable_index.py)
+# Derived, rebuilt in seconds by scripts/ingest.py from the committed tuned JSON.
+corpus/
+
+# The two-level navigable index, deleted at every tier by #32. The builder and
+# the routing evaluation stay in scripts/ as the evidence for that decision.
 index/
 
-# Normativa corpus: source PDFs plus their docling/pdftotext conversions (~26M).
-# Kept out of the repo; docs/research/ cites paths under here, so obtain the PDFs
-# and re-run the conversion pipeline locally to reproduce those measurements.
-documentos/
+# Normativa corpus: source PDFs plus their pdftotext conversions (~20M). Kept out
+# of the repo; docs/research/ cites paths under here, so obtain the PDFs and
+# re-run scripts/convert.py locally to reproduce those measurements.
+#
+# ...except the tuned docling artifacts, which are a permanent *input*, not a
+# derived file (#4, decision 5). Stage 1 needs an ML toolchain and ~20 minutes;
+# Stage 2 needs neither, and committing these 5.8 MB is what keeps that true.
+# git cannot re-include a file under an excluded directory, so each level is
+# unexcluded on the way down.
+documentos/*
+!documentos/documentos-docling/
+documentos/documentos-docling/*
+!documentos/documentos-docling/docling-tuned/
+documentos/documentos-docling/docling-tuned/*
+!documentos/documentos-docling/docling-tuned/*.json
+!documentos/documentos-docling/docling-tuned/*.md
+
+# Staging directory scripts/convert.py promotes out of.
+.conversion-stage/
