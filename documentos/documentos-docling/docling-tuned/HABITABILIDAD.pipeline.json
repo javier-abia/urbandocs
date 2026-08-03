@@ -4,10 +4,10 @@
   "ocr_page_ranges": [
     [
       1,
-      94
+      95
     ]
   ],
-  "ocr_page_ranges_source": "measured in #21: pp.1-94 arrive through OCR, pp.95-106 are spliced natively (force_full_page_ocr=false) and provably cleaner. Rewritten by scripts/convert.py on the next conversion.",
+  "ocr_page_ranges_source": "pp.1-94 arrive through OCR and pp.95-106 are spliced natively (#21); p.95 is pulled into the range because docling classified the whole page as one picture and read nothing from it, while plain tesseract reads it exactly (#17).",
   "probe": {
     "pages": 106,
     "sampled": 40,
@@ -205,5 +205,28 @@
     "table_batch_size": 4,
     "batch_polling_interval_seconds": 0.5,
     "queue_max_size": 100
+  },
+  "repair_ocr": {
+    "passes": [
+      "dropped-text",
+      "operators",
+      "markers"
+    ],
+    "pages": [
+      [
+        1,
+        95
+      ]
+    ],
+    "inserted": 117,
+    "extended": 17,
+    "operators": 3,
+    "markers": 255,
+    "residual_uncovered": [
+      {
+        "page": 31,
+        "ocr": "Iluminación, ventilación natural y relación con el exterior."
+      }
+    ]
   }
 }

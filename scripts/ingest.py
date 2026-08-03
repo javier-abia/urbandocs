@@ -199,7 +199,10 @@ def cite_path(cite: str) -> str:
     s = re.sub(r"^Secci[oó]?n\s*", "sec", s, flags=re.I)
     s = re.sub(r"^Cap[ií]?tulo\s*", "cap", s, flags=re.I)
     s = re.sub(r"^T[ií]?tulo\s*", "tit", s, flags=re.I)
-    return re.sub(r"\s+", "", s).rstrip(".")
+    # Trailing punctuation is part of the printed cite (`a)`, `1.`) but not of
+    # the address: `art14.1.a` reads as an id, `art14.1.a)` reads as a typo.
+    # `cite` keeps what the page prints; `id` keeps what is addressable.
+    return re.sub(r"\s+", "", s).rstrip(".)")
 
 
 # Rank of an unnumbered heading on the spine. Higher than any namespace rank, so

@@ -12,7 +12,7 @@ the corpus rather than chosen, and they are in [§4](#4-what-the-corpus-forced).
 
 ## 1. The two stages
 
-| | Stage 1 — `scripts/convert.py` | Stage 2 — `scripts/ingest.py` |
+| | Stage 1 — `tools/docling-convert/main.py` + `scripts/repair_ocr.py` | Stage 2 — `scripts/ingest.py` |
 |---|---|---|
 | Input | `documentos/*.pdf` | `docling-tuned/*.json` |
 | Output | `docling-tuned/*.json` + `.md` + `.pipeline.json` | `corpus/corpus.tsv` + `corpus.provenance.tsv` |
@@ -25,54 +25,114 @@ un-excludes `documentos/documentos-docling/docling-tuned/*.json` while still
 excluding the source PDFs — so anyone can rebuild the substrate without an ML
 toolchain, which is the owner's 2026-07-31 steer made structural.
 
-Stage 1 writes into `.conversion-stage/` and **only promotes into
-`docling-tuned/` once the acceptance gate passes**. Those artifacts are the
-measured input behind every decision on the map; a half-finished conversion
-must never overwrite them.
+`repair_ocr.py` writes into a temp dir and **only promotes into `docling-tuned/`
+once the acceptance gate passes**. Those artifacts are the measured input behind
+every decision on the map; a half-finished pass must never overwrite them.
 
 ---
 
 ## 2. Stage 1, pass by pass
 
-**Profile probe.** Per-document text density decides `text-layer` vs `ocr`
-(#13). Reproduced: DccSUA and DOG_2025 `text-layer`, HABITABILIDAD `ocr`.
+The converter itself is `tools/docling-convert/main.py`, moved into the repo
+unchanged — it is what produced the committed artifacts, and it was outside
+version control, which is half of what this ticket was about. Profile probe,
+`HeadingHierarchyOptions(enabled=True)`, `TableFormerMode.ACCURATE`, formula
+enrichment, `save_as_json`, and a `model_dump_json(serialize_as_any=True)`
+pipeline record are all its own.
 
-**docling.** Layout, tables, figure regions, formula enrichment. On the `ocr`
-profile the engine is `TesseractCliOcrOptions(force_full_page_ocr=True)`, not
-EasyOCR region output — region OCR silently dropped 65 lines on 34 of the 94
-OCR'd pages, and 58 of those 65 are already present in a full-page tesseract
-read ([#17](https://github.com/javier-abia/urbandocs/issues/17)).
+### Not full-page OCR — the mistake worth recording
 
-**Operator recovery**, gated to prose. `equ.traineddata` loads only under
-`--oem 0`, and docling has no `--oem` field, so this is a bbox splice after the
-fact ([#21](https://github.com/javier-abia/urbandocs/issues/21)). Three
-properties matter and all three are in the code:
+The first attempt replaced EasyOCR with `TesseractCliOcrOptions(force_full_page_ocr=True)`,
+reading #17's "full-page tesseract is the source of the text" as a docling
+setting. It is not, and the evidence is unambiguous:
 
-- it runs only over text items outside every `pictures[]` and `tables[]` box,
-  because on line art the same pass *manufactures* operators (105 `≤` against a
-  hand-counted truth of 40);
-- it aligns the two reads token by token and **only ever substitutes an
-  operator** — it never inserts, and never rewrites `>` to `≥`;
-- it skips digit-free items, which is a cost gate rather than a correctness one:
-  an operator always accompanies a number.
+- under `force_full_page_ocr=True` the layout model parks all OCR text as
+  children of a top-level `PictureItem`, so list items stop being list items —
+  that run recovered **44 markers where the hybrid document yields 255**;
+- docling has one OCR setting per document and cannot express a page range, so
+  it also overwrites pp.96–106, whose native text layer is measurably cleaner
+  (#11) and is the ground truth #21 checked operator recovery against.
 
-**Marker splice.** `scripts/recover_list_markers.py`, already the working
-reference from [#18](https://github.com/javier-abia/urbandocs/issues/18), run as
-a pass and merged onto items whose `marker` is empty.
+What #17 asks for is that the *text of the OCR'd pages* come from a full-page
+tesseract read. That is a splice over a page range, not a conversion mode. So
+the three repairs are post-passes in `scripts/repair_ocr.py`, which needs no GPU,
+no ML packages and no reconversion.
 
-**Acceptance gate.** `scripts/ocr_line_coverage.py` over the converted pages,
-failing the build on uncovered ink that reads as text (≥3 words, outside every
-known region). This is the class no other measurement reaches: a line dropped
-from the *middle* of a block reads as well-formed prose, so nothing announces
-the loss — but the ink is still on the page.
+### A — recover what region OCR dropped (#17)
 
-`ocr_line_coverage.py` gained two environment overrides (`OCR_DOC_JSON`,
-`OCR_DOC_PDF`) so it can gate any document rather than only HABITABILIDAD.
+Line-driven, not box-driven. The first cut matched tesseract words against each
+item's own bbox and structurally could not see the measured TOC losses: p.31's
+`A.1.1.` is 26 pt wide because it *is* only the marker, so the dropped title lies
+outside the very box you would search. Working from tesseract's line grouping
+asks the right question — what does this row say, and what did docling get from
+it. Two outcomes, both additive:
+
+- **extend** a single-line item to its whole row, when exactly one item sits on
+  the row and the row's read *starts with* what the item already says. The bbox
+  widens with the text, or the fix and the acceptance gate disagree;
+- **insert** whatever words on the row no item accounts for, as their own record.
+  Position is a fact that was measured; which provision the words belong to is
+  not, so they are not merged into a neighbour.
+
+**+117 inserted, 17 extended by 113 words** over pp.1–95, against #17's measured
+floor of 65 dropped lines.
+
+### B — comparison operators, gated to prose (#21)
+
+`equ.traineddata` loads only under `--oem 0`, which docling has no field for.
+Three properties, all in the code: it runs only over items outside every
+`pictures[]` and `tables[]` box, because on line art the same pass *manufactures*
+operators (105 `≤` against a hand-counted truth of 40); it aligns the two reads
+token by token and **only ever substitutes an operator**, never inserting and
+never rewriting `>` to `≥`; and it skips digit-free items as a cost gate.
+
+**3 spliced, 216 items gated out.** That is the expected shape, not a shortfall:
+#21's 24 `≥` + 17 `≤` were measured *ungated*, and it found only ~6 of 41 were
+prose — the rest are figure labels, which are out of scope.
+
+### C — list markers (#18)
+
+`scripts/recover_list_markers.py` unchanged, merged onto items whose `marker` is
+empty. **29 → 255**, and 4 orphan gutter markers, which are drop *detectors*.
+
+### D — acceptance gate (#17)
+
+`scripts/ocr_line_coverage.py` over the repaired pages, failing on uncovered ink
+that reads as text. This is the class no other measurement reaches: a line
+dropped from the middle of a block reads as well-formed prose, so nothing
+announces the loss — but the ink is still on the page.
+
+It gained two environment overrides (`OCR_DOC_JSON`, `OCR_DOC_PDF`) so it can
+gate any document, and the gate scores a band only if it is **≤ 75 px tall** at
+150 dpi. p.95's ADENDA divider reports a band spanning the whole page — 1,754 px
+against a 15 px text line — because most of that page is a decorative graphic no
+item covers; OCR'ing that region returns the page title, which looks like a
+dropped line and is not one. The title is in the substrate, in its own item.
+
+The gate took the run from **18 → 4 → 1** surviving bands, each round exposing a
+different defect in pass A. It is strict by default.
+
+### The residue, disclosed rather than hidden
+
+One band survives: p.31's `Iluminación, ventilación natural y relación con el
+exterior.`, a contents-page entry that lands in the substrate without its first
+word. Tesseract's full-page pass does not read `Iluminación,` at **any**
+confidence; the gate sees it because the gate crops one line and runs `--psm 7`,
+and line-level segmentation reads what page-level segmentation skips.
+
+Rather than tune OCR parameters until one row on a contents page lands — #17
+already ruled the contents pages out as an index spine, and #32 deleted the index
+tier entirely — the band is recorded in `HABITABILIDAD.pipeline.json` under
+`repair_ocr.residual_uncovered`. Promotion past a failing gate requires an
+explicit `--accept-residue`; the default still blocks, so a future regression
+fails the build.
 
 ### Verification
 
-Stage 1 was re-run end to end on DOG_2025 and reproduces the committed artifact
-exactly — 331 texts, 13 tables, 75 pictures, 25 pages — in 177 s.
+- `main.py` re-run end to end on DOG_2025 reproduces the committed artifact
+  exactly — 331 texts, 13 tables, 75 pictures, 25 pages — in 177 s.
+- The native tail pp.96–106 is **byte-identical** before and after repair, 2,407
+  items, checked in code rather than by eye.
 
 ---
 
@@ -84,7 +144,7 @@ exactly — 331 texts, 13 tables, 75 pictures, 25 pages — in 177 s.
 id  doc  page  cite  parent_id  label  text  norm
 ```
 
-**4,820 records, 613 section headers** across the three documents. (613 is the
+**4,924 records, 613 section headers** across the three documents. (613 is the
 same section count #32's prototype reached by a different route, which is a
 useful coincidence rather than a check — the prototype approximated a section as
 "nearest preceding header".)
@@ -93,7 +153,7 @@ useful coincidence rather than a check — the prototype approximated a section 
 |---|---|---|---|---|---|
 | DccSUA | 1,306 | 369 | 359 | 23 | 31 |
 | DOG_2025 | 338 | 21 | 29 | 13 | 75 |
-| HABITABILIDAD | 3,176 | 223 | 419 | 5 | 76 |
+| HABITABILIDAD | 3,280 | 223 | 436 | 5 | 76 |
 
 #32 listed three prototype defects for this ticket. All three are fixed and each
 is now checkable by re-running `scripts/section_geometry.py`.
@@ -131,19 +191,36 @@ end**.
 `<30 cm PLANTA` sit physically between two headers and inherited the parent.
 **515 dropped.** See §4 for the qualification this needed.
 
+### What the marker recovery bought the substrate
+
+Unaddressed list items fall from **505 to 315**, and the chain #4 argued the
+whole substrate on is now real:
+
+```
+HAB:p20:art14        Artículo 14   section_header
+HAB:p20:art14.1      1.            list_item
+HAB:p20:art14.1.a    a)            list_item   parent HAB:p20:art14.1
+HAB:p20:art14.1.b    b)            list_item   parent HAB:p20:art14.1
+HAB:p20:art14.1.c    c)            list_item   parent HAB:p20:art14.1
+```
+
+`a)`'s encimera requirement applies only under `1.`'s no-new-rooms condition, and
+`1.` is now in `a)`'s ancestor chain. `cite` keeps the printed `a)`; `id` drops
+the trailing punctuation, because `art14.1.a)` reads as a typo.
+
 ### The geometry, re-derived
 
 `scripts/section_geometry.py` over the real `corpus.tsv`:
 
 ```
-ancestor distance   p50 14   p75 67   p90 133   p95 171   p99 210   max 250
-window recall       ±10 45.4%   ±30 61.0%   ±60 73.0%
-cross-section bleed ±10 29.1%   ±30 45.4%   ±60 55.7%
+ancestor distance   p50 14   p75 66   p90 131   p95 170   p99 210   max 250
+window recall       ±10 45.2%   ±30 61.3%   ±60 73.7%
+cross-section bleed ±10 28.8%   ±30 45.4%   ±60 56.0%
 boundary check      0 children sitting past their section's end
 ```
 
 #32 measured `±30` recall at 58.5% and bleed at 42.6% off the ad-hoc probe;
-against the real substrate they are **61.0%** and **45.4%**. The conclusion is
+against the real substrate they are **61.3%** and **45.4%**. The conclusion is
 unchanged and, if anything, sharper: two records in five still do not see their
 governing header inside a 61-record window, and nearly half of that window
 belongs to some other section. `parent_id` is one column and gets it right every
@@ -286,9 +363,16 @@ a function of stored columns and is derived at render time (#27).
 ## Reproducing
 
 ```bash
-# Stage 1 -- needs docling + tesseract with spa/equ/eng traineddata
+# Stage 1a -- conversion. Needs docling; run once per document.
+cd tools/docling-convert && uv run main.py --dst /tmp/staging
+
+# Stage 1b -- OCR repair. Needs tesseract with spa/equ/eng traineddata, and a
+# tessdata directory that also carries tesseract's own configs/ and
+# tessconfigs/ -- asking for TSV from a directory of bare *.traineddata files
+# produces no output at all, silently.
 export TESSDATA_PREFIX=/path/to/tessdata
-python3 scripts/convert.py --doc HABITABILIDAD --stage-only
+python3 scripts/repair_ocr.py --doc HABITABILIDAD --dry-run
+python3 scripts/repair_ocr.py --doc HABITABILIDAD --accept-residue
 
 # Stage 2 -- needs nothing but python
 python3 scripts/ingest.py --stats
