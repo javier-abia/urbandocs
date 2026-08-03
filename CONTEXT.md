@@ -35,6 +35,18 @@ The address a document prints for a provision (`Artículo 14.1.a)`, `tabla 1.2`)
 It may repeat within a document and may be absent, so it locates a provision but
 does not uniquely identify one — distinct from the engine's own `id`.
 
+**Citation**:
+What the engine emits so a finding can be checked at the source: file, PDF page,
+and the provision's full ancestor chain. It promises a *location* — that the
+governing provision is there — not that the returned text matches the page
+glyph for glyph, which OCR'd documents cannot honour.
+_Avoid_: reference, source, quote
+
+**Printed page**:
+The page number a page prints on itself. Absent on some pages, and offset from
+the PDF page in some documents (`Pág. 36525` on DOG_2025's first page). Carried
+for reading aloud only — architects navigate by PDF page, so nothing derives it.
+
 **Pointer**:
 A phrase inside a provision that names another addressable unit by its printed
 cite (`según la tabla 1.2`, `lo regulado en el anexo II`). *In-corpus* when the
