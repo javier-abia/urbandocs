@@ -17,6 +17,9 @@ conversion must never overwrite them.
 Requires: docling 2.115.0, tesseract 5 with `spa`, `equ` and `eng` traineddata,
 and pdftoppm. Point TESSDATA_PREFIX at a tessdata directory holding all three;
 `equ` is only distributed in the legacy `tessdata` repo, not `tessdata_best`.
+That directory must also carry tesseract's own `configs/` and `tessconfigs/` --
+docling asks for TSV output by config name, and a directory holding only
+`*.traineddata` silently produces no output at all.
 
 Usage:
     python3 scripts/convert.py --doc HABITABILIDAD
@@ -183,10 +186,12 @@ def render(pdf: Path, page: int, tmp: Path) -> Path:
 
 
 def tess(image: Path, lang: str, psm: str, oem: str | None = None) -> str:
-    cmd = ["tesseract", str(image), "stdout", "-l", lang, "--psm", psm,
-           "--tessdata-dir", TESSDATA]
+    # Flags before the image. tesseract treats trailing bare words as config
+    # names, so anything after the output base can be swallowed.
+    cmd = ["tesseract", "--tessdata-dir", TESSDATA, "-l", lang, "--psm", psm]
     if oem:
         cmd += ["--oem", oem]
+    cmd += [str(image), "stdout"]
     out = subprocess.run(cmd, capture_output=True, text=True,
                          env={**os.environ, "OMP_THREAD_LIMIT": "1"})
     return out.stdout
