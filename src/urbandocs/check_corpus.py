@@ -12,8 +12,8 @@ in tables, so a check that reads only body text would pass on a corpus whose
 tables had been dropped.
 
 Usage:
-    python3 scripts/check_corpus.py
-    python3 scripts/check_corpus.py --corpus /tmp/corpus.tsv
+    python -m urbandocs.check_corpus
+    python -m urbandocs.check_corpus --corpus /tmp/corpus.tsv
 """
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ import re
 import sys
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parents[1]
+from urbandocs import paths
 
 DECREE = "dog-habitabilidad"
 
@@ -59,16 +59,19 @@ FURNITURE = ["ISSN", "CVE-DOG", "Depósito legal", "DOG Núm"]
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--corpus", type=Path, default=REPO / "corpus/corpus.tsv")
+    ap.add_argument("--root", type=Path, default=None,
+                    help="repo root; defaults to $URBANDOCS_ROOT or the enclosing repo")
+    ap.add_argument("--corpus", type=Path, default=None)
     args = ap.parse_args(argv)
+    corpus = args.corpus or paths.corpus_tsv(args.root)
 
-    if not args.corpus.exists():
-        sys.exit(f"missing {args.corpus}; run scripts/ingest.py first")
+    if not corpus.exists():
+        sys.exit(f"missing {corpus}; run `python -m urbandocs.ingest` first")
 
-    rows = list(csv.DictReader(args.corpus.open(), delimiter="\t"))
+    rows = list(csv.DictReader(corpus.open(), delimiter="\t"))
     decree = [r for r in rows if r["doc"] == DECREE]
     if not decree:
-        sys.exit(f"no {DECREE} records in {args.corpus}")
+        sys.exit(f"no {DECREE} records in {corpus}")
     text = " ".join(r["text"] for r in decree)
 
     failures = []
@@ -114,7 +117,7 @@ def main(argv=None):
 
     print("\nprovenance (every range native -- the OCR programme is retired)")
     prov = list(csv.DictReader(
-        args.corpus.with_name("corpus.provenance.tsv").open(), delimiter="\t"))
+        corpus.with_name("corpus.provenance.tsv").open(), delimiter="\t"))
     for r in prov:
         ok = r["source"] == "native"
         print(f"  [{'PASS' if ok else 'FAIL'}] {r['doc']} pp.{r['page_from']}-"

@@ -75,10 +75,10 @@ the raw decree, re-asserted on the ingested `corpus.tsv`. The current corpus had
 **zero of every symbol in the first band** across HABITABILIDAD pp.1–95.
 
 Stage 2 is fast and rerun on every change, so the bands live in
-`scripts/check_corpus.py` rather than in a transcript:
+`src/urbandocs/check_corpus.py` rather than in a transcript:
 
 ```bash
-python3 scripts/ingest.py && python3 scripts/check_corpus.py
+python -m urbandocs.ingest && python -m urbandocs.check_corpus
 ```
 
 | band | measured | required |

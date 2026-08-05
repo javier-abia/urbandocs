@@ -4,7 +4,7 @@ PDF → tuned `DoclingDocument` JSON. Slow (~6 min for the 51-page DOG decree, a
 ~20 min for a scanned document of similar length), run once per document, needs
 an ML toolchain. Its output is **committed** to this repo under
 `documentos/documentos-docling/docling-tuned/`, which is what lets Stage 2
-(`scripts/ingest.py`) rebuild the substrate in seconds with nothing but python.
+(`urbandocs.ingest`) rebuild the substrate in seconds with nothing but python.
 
 Kept as a self-contained project with its own `pyproject.toml` and `uv.lock`
 rather than folded into the root one, so the pinned environment that produced the
@@ -32,7 +32,7 @@ recovery against.
 ## After conversion
 
 Nothing, for the corpus as it stands. All three documents probe to `text-layer`,
-so Stage 1's output goes straight to `scripts/ingest.py`.
+so Stage 1's output goes straight to `urbandocs.ingest`.
 
 That changed with [#41](https://github.com/javier-abia/urbandocs/issues/41):
 `HABITABILIDAD.pdf` — the scanned consolidated edition, and the only document

@@ -9,7 +9,8 @@ wheels/
 # Virtual environments
 .venv
 
-# Derived, rebuilt in seconds by scripts/ingest.py from the committed tuned JSON.
+# Derived, rebuilt in seconds by `python -m urbandocs.ingest` from the committed
+# tuned JSON.
 corpus/
 
 # The two-level navigable index, deleted at every tier by #32. The builder and

@@ -16,8 +16,8 @@ answering layer can derive per-record fidelity from `doc` + `page` + `label`
 without any record storing it (#27).
 
 Usage:
-    python3 scripts/ingest.py                     # writes corpus/corpus.tsv
-    python3 scripts/ingest.py --out /tmp/c.tsv --stats
+    python -m urbandocs.ingest                     # writes corpus/corpus.tsv
+    python -m urbandocs.ingest --out /tmp/c.tsv --stats
 """
 
 from __future__ import annotations
@@ -31,8 +31,8 @@ import unicodedata
 from collections import defaultdict
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parents[1]
-TUNED = REPO / "documentos/documentos-docling/docling-tuned"
+from urbandocs import paths
+
 DOCS = ["DccSUA", "DOG_2025", "dog-habitabilidad"]
 
 # Short code used in ids. Ids are read aloud in citations, so they are hand-set
@@ -389,14 +389,17 @@ class Spine:
 # ingest
 # --------------------------------------------------------------------------- #
 
-def load_provenance(doc: str) -> list[tuple[int, int, str]]:
+def load_provenance(doc: str, *, tuned: Path) -> list[tuple[int, int, str]]:
     """Per-page-range extraction source, from the Stage 1 pipeline record.
 
     `*.pipeline.json` is document-level, and a document-level flag would
     disclaim HABITABILIDAD's native tail -- which is #21's own ground truth --
     so the ranges are explicit (#27).
+
+    `tuned` is passed rather than read from a module global so a test can point
+    two cases at two different fixture roots in one process (#46).
     """
-    cfg = json.loads((TUNED / f"{doc}.pipeline.json").read_text())
+    cfg = json.loads((tuned / f"{doc}.pipeline.json").read_text())
     if cfg.get("profile") != "ocr":
         return []
     ranges = cfg.get("ocr_page_ranges")
@@ -406,10 +409,10 @@ def load_provenance(doc: str) -> list[tuple[int, int, str]]:
     return [(int(a), int(b), "ocr") for a, b in ranges]
 
 
-def ingest_doc(doc: str, rows: list, stats: dict):
-    data = json.loads((TUNED / f"{doc}.json").read_text())
+def ingest_doc(doc: str, rows: list, stats: dict, *, tuned: Path):
+    data = json.loads((tuned / f"{doc}.json").read_text())
     code = DOC_CODES.get(doc) or re.sub(r"[^A-Za-z0-9]", "", doc)[:3].upper()
-    ocr_ranges = load_provenance(doc)
+    ocr_ranges = load_provenance(doc, tuned=tuned)
     pages = {int(k): v for k, v in data["pages"].items()}
 
     def is_ocr(page: int) -> bool:
@@ -671,22 +674,27 @@ def write_tsv(path: Path, columns: list[str], rows: list[dict]) -> None:
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    global TUNED
-    ap.add_argument("--tuned", type=Path, default=TUNED)
-    ap.add_argument("--out", type=Path, default=REPO / "corpus/corpus.tsv")
+    ap.add_argument("--root", type=Path, default=None,
+                    help="repo root; defaults to $URBANDOCS_ROOT or the enclosing repo")
+    ap.add_argument("--tuned", type=Path, default=None)
+    ap.add_argument("--out", type=Path, default=None)
     ap.add_argument("--docs", nargs="*", default=DOCS)
     ap.add_argument("--stats", action="store_true")
     args = ap.parse_args(argv)
-    TUNED = args.tuned
+
+    # Resolved after parsing, not as argparse defaults: a default evaluated at
+    # import time would make the module unimportable outside a repo (#46).
+    tuned = args.tuned or paths.tuned_dir(args.root)
+    out = args.out or paths.corpus_tsv(args.root)
 
     rows: list[dict] = []
     stats = defaultdict(int)
     prov_rows = []
     for doc in args.docs:
         before = len(rows)
-        ingest_doc(doc, rows, stats)
-        n_pages = len(json.loads((TUNED / f"{doc}.json").read_text())["pages"])
-        ocr = load_provenance(doc)
+        ingest_doc(doc, rows, stats, tuned=tuned)
+        n_pages = len(json.loads((tuned / f"{doc}.json").read_text())["pages"])
+        ocr = load_provenance(doc, tuned=tuned)
         if ocr:
             covered = sorted(ocr)
             prov_rows += [{"doc": doc, "page_from": a, "page_to": b, "source": "ocr"}
@@ -706,14 +714,14 @@ def main(argv=None):
         if args.stats:
             print(f"{doc}: {len(rows) - before} records", file=sys.stderr)
 
-    args.out.parent.mkdir(parents=True, exist_ok=True)
-    write_tsv(args.out, COLUMNS, rows)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    write_tsv(out, COLUMNS, rows)
 
-    prov_path = args.out.with_name("corpus.provenance.tsv")
+    prov_path = out.with_name("corpus.provenance.tsv")
     prov_rows.sort(key=lambda r: (r["doc"], r["page_from"]))
     write_tsv(prov_path, ["doc", "page_from", "page_to", "source"], prov_rows)
 
-    print(f"{len(rows)} records -> {args.out}", file=sys.stderr)
+    print(f"{len(rows)} records -> {out}", file=sys.stderr)
     print(f"{len(prov_rows)} ranges -> {prov_path}", file=sys.stderr)
     if args.stats:
         for k in sorted(stats):
