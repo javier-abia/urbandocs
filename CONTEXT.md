@@ -65,3 +65,15 @@ anterior`). Carries no cite, so it cannot be resolved by lookup. Not a pointer.
 
 **Corpus**:
 The set of normativa documents the engine holds and searches.
+
+**Substrate**:
+The one flat table the engine searches — `corpus/corpus.tsv`, one record per
+addressable unit, rebuilt in seconds from the committed docling JSON. The agent
+never opens a document file.
+_Avoid_: index, database, store
+
+**Record**:
+One row of the substrate: a provision, heading, table, or figure position, with
+its `id`, `cite`, `parent_id`, page, verbatim `text` and searchable `norm`. What
+a lookup returns and what a citation is built from.
+_Avoid_: chunk, row, entry

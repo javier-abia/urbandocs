@@ -18,8 +18,13 @@ import sys
 from pathlib import Path
 
 REPO = Path(os.environ.get("URBANDOCS_REPO", Path(__file__).resolve().parent.parent))
-PDF = REPO / "documentos" / "HABITABILIDAD.pdf"
-DOC = REPO / "documentos/documentos-docling/docling-tuned/HABITABILIDAD.json"
+# Defaults are HABITABILIDAD, the one document with an `ocr` profile. Overridable
+# so scripts/convert.py can run this as the acceptance gate for any document it
+# OCRs.
+PDF = Path(os.environ.get("OCR_DOC_PDF", REPO / "documentos" / "HABITABILIDAD.pdf"))
+DOC = Path(os.environ.get(
+    "OCR_DOC_JSON",
+    REPO / "documentos/documentos-docling/docling-tuned/HABITABILIDAD.json"))
 TESSDATA = os.environ.get("TESSDATA_PREFIX", "/usr/share/tessdata")
 
 DPI = 150

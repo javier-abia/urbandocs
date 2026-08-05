@@ -1,0 +1,232 @@
+{
+  "profile": "ocr",
+  "decided_by": "probe",
+  "ocr_page_ranges": [
+    [
+      1,
+      95
+    ]
+  ],
+  "ocr_page_ranges_source": "pp.1-94 arrive through OCR and pp.95-106 are spliced natively (#21); p.95 is pulled into the range because docling classified the whole page as one picture and read nothing from it, while plain tesseract reads it exactly (#17).",
+  "probe": {
+    "pages": 106,
+    "sampled": 40,
+    "median_chars": 5.5,
+    "sparse_fraction": 0.925
+  },
+  "thresholds": {
+    "min_chars_per_page": 100,
+    "sparse_page_fraction": 0.5,
+    "probe_sample_pages": 40
+  },
+  "pipeline_options": {
+    "document_timeout": null,
+    "accelerator_options": {
+      "num_threads": 4,
+      "device": "auto",
+      "cuda_use_flash_attention2": false
+    },
+    "enable_remote_services": false,
+    "allow_external_plugins": false,
+    "artifacts_path": null,
+    "do_picture_classification": false,
+    "picture_classification_options": {
+      "engine_options": {
+        "engine_type": "transformers",
+        "top_k": null,
+        "torch_dtype": null,
+        "compile_model": true
+      },
+      "model_spec": {
+        "name": "document_figure_classifier_v2",
+        "repo_id": "docling-project/DocumentFigureClassifier-v2.5",
+        "revision": "main",
+        "engine_overrides": {}
+      }
+    },
+    "do_picture_description": false,
+    "picture_description_options": {
+      "batch_size": 8,
+      "scale": 2.0,
+      "picture_area_threshold": 0.05,
+      "classification_allow": null,
+      "classification_deny": null,
+      "classification_min_confidence": 0.0,
+      "engine_options": {
+        "engine_type": "auto_inline",
+        "prefer_vllm": false
+      },
+      "model_spec": {
+        "name": "SmolVLM-256M-Instruct",
+        "default_repo_id": "HuggingFaceTB/SmolVLM-256M-Instruct",
+        "revision": "main",
+        "prompt": "Describe this image in a few sentences.",
+        "response_format": "plaintext",
+        "supported_engines": null,
+        "engine_overrides": {
+          "mlx": {
+            "repo_id": "moot20/SmolVLM-256M-Instruct-MLX",
+            "revision": null,
+            "torch_dtype": null,
+            "extra_config": {}
+          },
+          "transformers": {
+            "repo_id": null,
+            "revision": null,
+            "torch_dtype": "bfloat16",
+            "extra_config": {
+              "transformers_model_type": "automodel-imagetexttotext"
+            }
+          }
+        },
+        "api_overrides": {
+          "api_lmstudio": {
+            "params": {
+              "model": "smolvlm-256m-instruct"
+            }
+          }
+        },
+        "trust_remote_code": false,
+        "stop_strings": [],
+        "temperature": 0.0,
+        "max_new_tokens": 4096,
+        "extra_generation_config": {}
+      },
+      "prompt": "Describe this image in a few sentences.",
+      "generation_config": {
+        "max_new_tokens": 200,
+        "do_sample": false
+      }
+    },
+    "do_chart_extraction": false,
+    "chart_extraction_options": {
+      "kind": "chart_extraction",
+      "model": "granite-vision-v4",
+      "chart2csv": true,
+      "chart2code": false,
+      "chart2summary": false
+    },
+    "images_scale": 1.0,
+    "generate_page_images": false,
+    "generate_picture_images": false,
+    "do_table_structure": true,
+    "do_ocr": true,
+    "do_code_enrichment": false,
+    "do_formula_enrichment": true,
+    "force_backend_text": false,
+    "table_structure_options": {
+      "do_cell_matching": true,
+      "mode": "accurate"
+    },
+    "ocr_options": {
+      "lang": [
+        "es"
+      ],
+      "force_full_page_ocr": false,
+      "bitmap_area_threshold": 0.05,
+      "use_gpu": null,
+      "confidence_threshold": 0.5,
+      "model_storage_directory": null,
+      "recog_network": "standard",
+      "download_enabled": true,
+      "suppress_mps_warnings": true
+    },
+    "layout_options": {
+      "keep_empty_clusters": false,
+      "skip_cell_assignment": false,
+      "create_orphan_clusters": true,
+      "model_spec": {
+        "name": "docling_layout_heron",
+        "repo_id": "docling-project/docling-layout-heron",
+        "revision": "main",
+        "model_path": "",
+        "supported_devices": [
+          "cpu",
+          "cuda",
+          "mps",
+          "xpu"
+        ]
+      }
+    },
+    "code_formula_options": {
+      "engine_options": {
+        "engine_type": "auto_inline",
+        "prefer_vllm": false
+      },
+      "model_spec": {
+        "name": "CodeFormulaV2",
+        "default_repo_id": "docling-project/CodeFormulaV2",
+        "revision": "main",
+        "prompt": "",
+        "response_format": "plaintext",
+        "supported_engines": null,
+        "engine_overrides": {
+          "transformers": {
+            "repo_id": null,
+            "revision": null,
+            "torch_dtype": null,
+            "extra_config": {
+              "transformers_model_type": "automodel-imagetexttotext",
+              "extra_generation_config": {
+                "skip_special_tokens": false
+              },
+              "torch_dtype": "bfloat16"
+            }
+          }
+        },
+        "api_overrides": {},
+        "trust_remote_code": false,
+        "stop_strings": [
+          "</doctag>",
+          "<end_of_utterance>"
+        ],
+        "temperature": 0.0,
+        "max_new_tokens": 4096,
+        "extra_generation_config": {}
+      },
+      "scale": 2.0,
+      "max_size": null,
+      "extract_code": true,
+      "extract_formulas": true
+    },
+    "generate_table_images": false,
+    "generate_parsed_pages": true,
+    "heading_hierarchy_options": {
+      "enabled": true,
+      "use_bookmarks": true,
+      "use_numbering": true,
+      "use_style": true,
+      "numbering_schemes": null,
+      "max_level": 6,
+      "bookmark_match_threshold": 0.8
+    },
+    "ocr_batch_size": 4,
+    "layout_batch_size": 4,
+    "table_batch_size": 4,
+    "batch_polling_interval_seconds": 0.5,
+    "queue_max_size": 100
+  },
+  "repair_ocr": {
+    "passes": [
+      "dropped-text",
+      "operators",
+      "markers"
+    ],
+    "pages": [
+      [
+        1,
+        95
+      ]
+    ],
+    "inserted": 117,
+    "extended": 17,
+    "operators": 3,
+    "markers": 255,
+    "residual_uncovered": [
+      {
+        "page": 31,
+        "ocr": "Iluminación, ventilación natural y relación con el exterior."
+      }
+    ]
+  }
+}
