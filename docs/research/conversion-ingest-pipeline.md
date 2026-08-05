@@ -12,7 +12,7 @@ the corpus rather than chosen, and they are in [§4](#4-what-the-corpus-forced).
 
 ## 1. The two stages
 
-| | Stage 1 — `tools/docling-convert/main.py` + `scripts/repair_ocr.py` | Stage 2 — `scripts/ingest.py` |
+| | Stage 1 — `tools/docling-convert/main.py` + `scripts/repair_ocr.py` | Stage 2 — `urbandocs.ingest` |
 |---|---|---|
 | Input | `documentos/*.pdf` | `docling-tuned/*.json` |
 | Output | `docling-tuned/*.json` + `.md` + `.pipeline.json` | `corpus/corpus.tsv` + `corpus.provenance.tsv` |
@@ -375,6 +375,6 @@ python3 scripts/repair_ocr.py --doc HABITABILIDAD --dry-run
 python3 scripts/repair_ocr.py --doc HABITABILIDAD --accept-residue
 
 # Stage 2 -- needs nothing but python
-python3 scripts/ingest.py --stats
+python -m urbandocs.ingest --stats
 python3 scripts/section_geometry.py
 ```

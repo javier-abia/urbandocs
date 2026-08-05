@@ -1,7 +1,39 @@
 [project]
 name = "urbandocs"
 version = "0.1.0"
-description = "Add your description here"
+description = "Retrieval substrate over local construction-permit normativa"
 readme = "README.md"
 requires-python = ">=3.14"
+
+# Empty, and intended to stay empty. The engine is Python stdlib in-process
+# (#33): every tool this repo uses is a dev dependency, so this list staying
+# empty is itself an assertion worth noticing if it ever changes.
 dependencies = []
+
+# Only what #46's own tests need to run. ruff, ty and the rest of the toolchain
+# are #48's; this group exists so the tests landed here are not dead weight.
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[tool.pytest.ini_options]
+# `src/` layout: tests import `urbandocs` from the source tree. Kept here rather
+# than left to #48 because it is a consequence of the layout, not a tool choice.
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/urbandocs"]
+
+[tool.uv]
+# `tools/docling-convert/` is deliberately NOT a workspace member (#46).
+#
+# A uv workspace produces one lockfile and one shared resolution, so making it a
+# member would pull docling and torch into the engine's resolution -- for a
+# package with zero runtime dependencies, whose Stage 2 rebuild is fast on a
+# clean checkout precisely because it needs no ML toolchain. It keeps its own
+# pinned uv.lock and its own venv; the two projects are locked separately.
+package = true
