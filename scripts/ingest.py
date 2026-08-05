@@ -33,12 +33,22 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 TUNED = REPO / "documentos/documentos-docling/docling-tuned"
-DOCS = ["DccSUA", "DOG_2025", "HABITABILIDAD"]
+DOCS = ["DccSUA", "DOG_2025", "dog-habitabilidad"]
 
 # Short code used in ids. Ids are read aloud in citations, so they are hand-set
 # rather than derived; any document not listed falls back to its first three
 # alphanumerics upper-cased.
-DOC_CODES = {"DccSUA": "SUA", "DOG_2025": "DOG", "HABITABILIDAD": "HAB"}
+#
+# `dog-habitabilidad` is Decreto 128/2023 (DOG núm. 176), which replaced the
+# consolidated `HABITABILIDAD` edition outright (#39, #41). Two things ride on
+# its code being `D128`:
+#
+#   - the fallback would derive `DOG` from `doghabitabilidad`, colliding with
+#     DOG_2025 -- ids would stop being unique across the corpus;
+#   - `HAB` is deliberately left dead. The decree renumbers every page, so a
+#     stale `HAB:p20:art14.1.a` must fail to resolve rather than land on a
+#     different provision that now occupies that address.
+DOC_CODES = {"DccSUA": "SUA", "DOG_2025": "DOG", "dog-habitabilidad": "D128"}
 
 COLUMNS = ["id", "doc", "page", "cite", "parent_id", "label", "text", "norm"]
 
@@ -47,6 +57,24 @@ COLUMNS = ["id", "doc", "page", "cite", "parent_id", "label", "text", "norm"]
 # text in any document. DOG_2025's official `Pág.` markers are labelled `text`
 # and therefore survive, which is what #8 wants.
 FURNITURE_LABELS = {"page_header", "page_footer"}
+
+# The one furniture residue the label filter does not catch. Both Diario Oficial
+# documents print a running `DOG Núm. NNN` masthead that docling labels `text` in
+# the `body` layer (49 pages of Decreto 128/2023, 21 of DOG_2025), so it would
+# otherwise land as a record and interleave into provision text.
+#
+# Matched on the masthead's own shape, not on `Núm.`: the same pages print
+# `Pág. 52775`, which is the official citation page and is kept deliberately
+# (#8, #14) -- a geometric filter would take the masthead and the page number
+# together, since they share a band at the top of the page.
+#
+# On 6 pages the masthead is not a standalone item at all: docling appends it to
+# the body paragraph that runs to the foot of the page, so it arrives *inside*
+# provision text (`...se simplifica la estructu ra del índice y DOG Núm. 176`).
+# Measured across the corpus it is always trailing, at the exact end of the
+# field, so it is stripped rather than matched whole -- 4 of the 6 are DOG_2025,
+# where the same defect was live and unmeasured before this document exposed it.
+RUNNING_HEADER_RE = re.compile(r"\s*DOG\s+N[uú]m\.\s*[\d.]+\s*$")
 
 # Private-use codepoints are a fixed Symbol-font mapping, verified in context
 # (#14). Decoding them recovers the character the page prints; it asserts
@@ -58,6 +86,74 @@ SYMBOL_MAP = {"\uf0b1": "±", "\uf061": "α", "\uf044": "Δ", "\uf06d": "μ"}
 # `norm` only; query-side normalization runs the same function, so both
 # spellings reach the same key.
 SUBSCRIPT_PAIRS = [("R", "d"), ("C", "1"), ("B", "o"), ("U", "d"), ("R", "c")]
+
+# --- line-break hyphens -------------------------------------------------- #
+#
+# The Diario Oficial sets two justified columns and breaks words across lines.
+# docling rejoins the lines but keeps the hyphen and the column gutter, in
+# either order depending on which side of the break the glyph sat:
+#
+#     `super -ficie`   70 sites in Decreto 128/2023, 127 in DOG_2025
+#     `simi- lares`     2 sites in DccSUA
+#
+# Left alone these defeat the sweep on exactly the terms that carry the rules --
+# `superficie`, `fachadas`, `ventilación`, `paramento`, `comunicación` are all
+# split (#32, #41).
+#
+# The hazard is that the same documents use a bare hyphen as a *parenthetical
+# dash*: `espacios libres -públicos o privados- que no cumplan`. Joining that
+# fuses two real words (`privadosque`), which is worse than the split it fixes.
+#
+# The discriminator is pairing, and it is exact on all 219 sites in the corpus:
+# a parenthetical dash opens (`word -lower`) and closes (`lower- `), a line-break
+# hyphen never closes. Measured: 9 openers in Decreto 128/2023 find a closer, at
+# 17-55 characters; the other 61 find none; DOG_2025 has 127 openers and zero
+# closers; DccSUA has 2 pairs. The window is set well beyond the observed 55.
+DASH_PAIR_WINDOW = 200
+DASH_OPEN_RE = re.compile(r"(?<=[A-Za-zÁÉÍÓÚÜÑáéíóúüñ])\s+-(?=[a-záéíóúüñ])")
+DASH_CLOSE_RE = re.compile(r"(?<=[A-Za-zÁÉÍÓÚÜÑáéíóúüñ])-(?=[\s,.;:)]|$)")
+
+
+def rejoin_hyphens(s: str) -> str:
+    """Close line-break hyphens, leave paired parenthetical dashes standing.
+
+    Runs on `norm` only. `text` keeps what the page prints, because a citation
+    promises a location and never that the string matches glyph for glyph (#8);
+    rewriting the verbatim text to make it searchable would trade the one
+    guarantee the engine does make for the one it does not.
+    """
+    protected = set()
+    for m in DASH_OPEN_RE.finditer(s):
+        close = DASH_CLOSE_RE.search(s, m.end(), m.end() + DASH_PAIR_WINDOW)
+        if close:
+            protected.add(m.start())
+            protected.add(close.start())
+
+    out, i = [], 0
+    for m in DASH_OPEN_RE.finditer(s):
+        if m.start() in protected:
+            continue
+        out.append(s[i:m.start()])
+        i = m.end()
+    out.append(s[i:])
+    s = "".join(out)
+
+    # The mirrored shape. Rare (2 real sites, both DccSUA) but the same rule:
+    # `simi- lares` joins, `privados- que` is the closing half of a pair and does
+    # not. Re-derived after the first pass, since the offsets have moved.
+    protected = set()
+    for m in DASH_OPEN_RE.finditer(s):
+        close = DASH_CLOSE_RE.search(s, m.end(), m.end() + DASH_PAIR_WINDOW)
+        if close:
+            protected.add(close.start())
+    out, i = [], 0
+    for m in re.finditer(r"(?<=[A-Za-zÁÉÍÓÚÜÑáéíóúüñ])-\s+(?=[a-záéíóúüñ])", s):
+        if m.start() in protected:
+            continue
+        out.append(s[i:m.start()])
+        i = m.end()
+    out.append(s[i:])
+    return "".join(out)
 
 # A section header's printed cite. Ordered: the longest, most specific shapes
 # first, so `Artículo 14.` does not match the bare-number rule.
@@ -89,6 +185,28 @@ INLINE_MARKER_RE = re.compile(
 # sibling. HABITABILIDAD prints top-level items at `bbox.l` ~70 and their
 # sub-items at ~83.5 -- the same ~13 pt gutter #18 read the eaten markers out of.
 INDENT_TOL = 6.0
+
+# A heading docling labelled `list_item`. In Decreto 128/2023 only 37 of the 114
+# items that print a letter-dotted cite and a title got `section_header`; the
+# other 77 arrive as `list_item` (or plain `text`), so without this the spine
+# holds no `A.2`, `A.2.1` or `A.2.2` at all and every provision on pp.19-22 --
+# including the 60º rule that decides whether two paramentos are *enfrentados* --
+# inherits the stale `A.1.2` five pages back. That is a wrong ancestor chain,
+# which is the one thing a citation does promise (#8).
+#
+# Keyed on the letter-dotted shape `parse_cite` already recognises, which is this
+# document's numbering scheme: DccSUA numbers `Sección SUA n` / `n.n` / `Anejo A`
+# and DOG_2025 has no dotted numbering, so this promotes 0 items in both --
+# measured, not assumed.
+#
+# The contents pages (pp.14-17) match too, and that is harmless rather than a
+# concession: nesting is by cite *prefix* (#32), so the index builds a stack that
+# the body's first heading pops in full -- `A.1` is not an extension of `B.3`.
+# The index entries were already records before this; the label is what changed.
+PROMOTABLE_HEADING_RE = re.compile(r"^[A-Z]\.[0-9]+(?:\.[0-9]+)*\.?\s+\S")
+# Guard against a paragraph that merely opens with a cite it is talking about.
+# Rejects nothing in the current corpus -- every promoted item is 11-99 chars.
+MAX_PROMOTED_HEADING = 100
 
 
 # --------------------------------------------------------------------------- #
@@ -127,9 +245,7 @@ def normalize(text: str) -> str:
     for bad, good in SYMBOL_MAP.items():
         text = text.replace(bad, good)
     s = re.sub(r"\s+", " ", text).strip()
-    # hyphenation rejoin, guarded: `pre- vistas` -> `previstas`, but not
-    # `30-40 mm`, where both sides are numeric.
-    s = re.sub(r"(?<=[A-Za-zÁÉÍÓÚÜÑáéíóúüñ])-\s+(?=[a-zñáéíóúü])", "", s)
+    s = rejoin_hyphens(s)
     for head, tail in SUBSCRIPT_PAIRS:
         s = re.sub(rf"\b{head}\s+{tail}\b", f"{head}{tail}", s)
     s = s.lower()
@@ -427,6 +543,18 @@ def ingest_doc(doc: str, rows: list, stats: dict):
         if not raw:
             stats["empty"] += 1
             continue
+
+        stripped = RUNNING_HEADER_RE.sub("", raw)
+        if stripped != raw:
+            stats["running_header"] += 1
+            raw = stripped.strip()
+            if not raw:
+                continue
+
+        if (label in ("list_item", "text") and len(raw) <= MAX_PROMOTED_HEADING
+                and PROMOTABLE_HEADING_RE.match(raw)):
+            label = "section_header"
+            stats["promoted_headings"] += 1
 
         if label == "section_header":
             cite, ckind, rank = parse_cite(raw)

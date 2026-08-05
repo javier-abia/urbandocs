@@ -35,7 +35,7 @@ import sys
 
 TUNED = pathlib.Path("documentos/documentos-docling/docling-tuned")
 OUT = pathlib.Path("index")
-DOCS = ["DccSUA", "DOG_2025", "HABITABILIDAD"]
+DOCS = ["DccSUA", "DOG_2025", "dog-habitabilidad"]
 
 HEADING_LABELS = {"section_header", "title"}
 WORD = re.compile(r"[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]{5,}")

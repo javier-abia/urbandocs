@@ -22,7 +22,7 @@ from collections import defaultdict
 from pathlib import Path
 
 TUNED = Path(__file__).resolve().parents[1] / "documentos/documentos-docling/docling-tuned"
-DOCS = ["DccSUA", "HABITABILIDAD"]
+DOCS = ["DccSUA", "dog-habitabilidad"]
 
 CITE = re.compile(r"^([A-Za-z]?[0-9]+(?:\.[0-9]+)*|[A-Z]\.[0-9](?:\.[0-9])*)")
 

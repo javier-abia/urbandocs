@@ -1,7 +1,8 @@
 # docling-convert — Stage 1
 
-PDF → tuned `DoclingDocument` JSON. Slow (~20 min for HABITABILIDAD), run once per
-document, needs an ML toolchain. Its output is **committed** to this repo under
+PDF → tuned `DoclingDocument` JSON. Slow (~6 min for the 51-page DOG decree, and
+~20 min for a scanned document of similar length), run once per document, needs
+an ML toolchain. Its output is **committed** to this repo under
 `documentos/documentos-docling/docling-tuned/`, which is what lets Stage 2
 (`scripts/ingest.py`) rebuild the substrate in seconds with nothing but python.
 
@@ -30,14 +31,18 @@ recovery against.
 
 ## After conversion
 
-docling's OCR engine is EasyOCR, and three measured defects on HABITABILIDAD are
-not fixable by any docling setting — EasyOCR's character set has no `≥`/`≤` glyph
-at all, and its region OCR drops lines without a trace. `scripts/repair_ocr.py`
-patches them with a second engine (tesseract) and gates the result:
+Nothing, for the corpus as it stands. All three documents probe to `text-layer`,
+so Stage 1's output goes straight to `scripts/ingest.py`.
 
-```bash
-python3 scripts/repair_ocr.py --doc HABITABILIDAD
-```
+That changed with [#41](https://github.com/javier-abia/urbandocs/issues/41):
+`HABITABILIDAD.pdf` — the scanned consolidated edition, and the only document
+that ever needed OCR — was replaced by `dog-habitabilidad.pdf`, the DOG decree it
+consolidates, which is natively typeset (probe: 2,336 chars/page, 0% sparse).
 
-That script needs no GPU and no ML packages. See its docstring for the four
-passes and what each one is measured against.
+`scripts/repair_ocr.py` stays for the next scanned PDF the corpus takes on.
+docling's OCR engine is EasyOCR, and three measured defects are not fixable by
+any docling setting — EasyOCR's character set has no `≥`/`≤` glyph at all, and
+its region OCR drops lines without a trace — so that script patches them with a
+second engine (tesseract) and gates the result. It needs no GPU and no ML
+packages, and it exits on any document that converted under `text-layer`. See its
+docstring for the four passes and what each one is measured against.
