@@ -1,18 +1,11 @@
 {
-  "profile": "ocr",
+  "profile": "text-layer",
   "decided_by": "probe",
-  "ocr_page_ranges": [
-    [
-      1,
-      95
-    ]
-  ],
-  "ocr_page_ranges_source": "pp.1-94 arrive through OCR and pp.95-106 are spliced natively (#21); p.95 is pulled into the range because docling classified the whole page as one picture and read nothing from it, while plain tesseract reads it exactly (#17).",
   "probe": {
-    "pages": 106,
+    "pages": 51,
     "sampled": 40,
-    "median_chars": 5.5,
-    "sparse_fraction": 0.925
+    "median_chars": 2336.0,
+    "sparse_fraction": 0.0
   },
   "thresholds": {
     "min_chars_per_page": 100,
@@ -110,7 +103,7 @@
     "generate_page_images": false,
     "generate_picture_images": false,
     "do_table_structure": true,
-    "do_ocr": true,
+    "do_ocr": false,
     "do_code_enrichment": false,
     "do_formula_enrichment": true,
     "force_backend_text": false,
@@ -119,17 +112,9 @@
       "mode": "accurate"
     },
     "ocr_options": {
-      "lang": [
-        "es"
-      ],
+      "lang": [],
       "force_full_page_ocr": false,
-      "bitmap_area_threshold": 0.05,
-      "use_gpu": null,
-      "confidence_threshold": 0.5,
-      "model_storage_directory": null,
-      "recog_network": "standard",
-      "download_enabled": true,
-      "suppress_mps_warnings": true
+      "bitmap_area_threshold": 0.05
     },
     "layout_options": {
       "keep_empty_clusters": false,
@@ -205,28 +190,5 @@
     "table_batch_size": 4,
     "batch_polling_interval_seconds": 0.5,
     "queue_max_size": 100
-  },
-  "repair_ocr": {
-    "passes": [
-      "dropped-text",
-      "operators",
-      "markers"
-    ],
-    "pages": [
-      [
-        1,
-        95
-      ]
-    ],
-    "inserted": 117,
-    "extended": 17,
-    "operators": 3,
-    "markers": 255,
-    "residual_uncovered": [
-      {
-        "page": 31,
-        "ocr": "Iluminación, ventilación natural y relación con el exterior."
-      }
-    ]
   }
 }

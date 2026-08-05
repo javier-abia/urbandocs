@@ -31,7 +31,7 @@ import unicodedata
 from pathlib import Path
 
 TUNED = Path("documentos/documentos-docling/docling-tuned")
-DOCS = ("DccSUA", "HABITABILIDAD", "DOG_2025")
+DOCS = ("DccSUA", "dog-habitabilidad", "DOG_2025")
 
 # Headings are the unit's own title, not a reference to another unit.
 HEADING_LABELS = {"section_header", "title", "page_header", "page_footer"}

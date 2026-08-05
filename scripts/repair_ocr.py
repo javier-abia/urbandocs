@@ -23,9 +23,15 @@ Nothing here rewrites text that is already present and complete. Pass A only
 it did see. A wholesale replacement would regress every measurement on the map
 for no measured gain.
 
+No document in the corpus needs this today. HABITABILIDAD, the scanned edition
+these three defects were measured on, was replaced by the natively-typeset DOG
+decree (#39, #41), so every document now converts under the `text-layer` profile
+and this script exits on the profile check. It stays for the next scanned PDF the
+corpus takes on -- the defects are EasyOCR's, not that document's.
+
 Usage:
-    python3 scripts/repair_ocr.py --doc HABITABILIDAD --dry-run
-    python3 scripts/repair_ocr.py --doc HABITABILIDAD
+    python3 scripts/repair_ocr.py --doc <NAME> --dry-run
+    python3 scripts/repair_ocr.py --doc <NAME>
 """
 
 from __future__ import annotations
@@ -520,7 +526,9 @@ def coverage_gate(json_path: Path, pdf: Path, last_page: int) -> tuple[bool, lis
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--doc", default="HABITABILIDAD")
+    # No default: the document this was written against has left the corpus, and
+    # a stale default would fail on a missing path rather than say why.
+    ap.add_argument("--doc", required=True)
     ap.add_argument("--tuned", type=Path, default=TUNED)
     ap.add_argument("--pages", default=None,
                     help="OCR page range, e.g. 1-95. Default: from pipeline.json")
