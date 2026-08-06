@@ -20,20 +20,44 @@ Usage:
     uv run -m urbandocs.ingest --out /tmp/c.tsv --stats
 """
 
-#TODO: Create a plan on how to facilitate the modification of the script on new versions of docling output
+# TODO: Create a plan on how to facilitate the modification of the script on
+# new versions of docling output.
 
 from __future__ import annotations
 
 import argparse
-import csv
 import json
 import re
 import sys
 import unicodedata
 from collections import defaultdict
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 from urbandocs import paths
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+# Names for the three shapes this module passes around. They exist because ty is
+# configured with `missing-type-argument = "error"` (#48): a bare `dict` resolves
+# its parameters to `Unknown` and quietly switches the type checker off for
+# everything downstream of it. Naming the shape is the cheap way to keep it on.
+
+#: A node of docling's JSON, straight off `json.loads`. `Any` is honest here --
+#: the shape is the converter's, not ours, and every read of it is a `.get()`
+#: with a default precisely because the schema is not guaranteed (see the TODO
+#: at the top of this module about docling version drift).
+Node = dict[str, Any]
+
+#: A bounding box in docling's BOTTOMLEFT coordinates: `l`, `r`, `t`, `b`.
+Box = dict[str, float]
+
+#: One corpus record, keyed by `COLUMNS`. Values are mixed -- `page` is an int,
+#: the rest are strings -- and `write_tsv` stringifies on the way out, so the
+#: value type is deliberately `object` rather than a union that would have to be
+#: widened again at the first non-string column.
+Row = dict[str, object]
 
 DOCS = ["DccSUA", "DOG_2025", "dog-habitabilidad"]
 
@@ -135,7 +159,7 @@ def rejoin_hyphens(s: str) -> str:
     for m in DASH_OPEN_RE.finditer(s):
         if m.start() in protected:
             continue
-        out.append(s[i:m.start()])
+        out.append(s[i : m.start()])
         i = m.end()
     out.append(s[i:])
     s = "".join(out)
@@ -152,20 +176,21 @@ def rejoin_hyphens(s: str) -> str:
     for m in re.finditer(r"(?<=[A-Za-zÁÉÍÓÚÜÑáéíóúüñ])-\s+(?=[a-záéíóúüñ])", s):
         if m.start() in protected:
             continue
-        out.append(s[i:m.start()])
+        out.append(s[i : m.start()])
         i = m.end()
     out.append(s[i:])
     return "".join(out)
+
 
 # A section header's printed cite. Ordered: the longest, most specific shapes
 # first, so `Artículo 14.` does not match the bare-number rule.
 CITE_PATTERNS = [
     # namespace headings -- they open a numbering space rather than sit in one
-    (re.compile(r"^(Anejo\s+[A-Z])\b", re.I), "ns", 1),
-    (re.compile(r"^(Secci[oó]n\s+[A-Z]*\s*[0-9]+)\b", re.I), "ns", 1),
-    (re.compile(r"^(Cap[ií]tulo\s+[IVXLC0-9]+)\b", re.I), "ns", 1),
-    (re.compile(r"^(T[ií]tulo\s+[IVXLC0-9]+)\b", re.I), "ns", 1),
-    (re.compile(r"^(Art[ií]culo\s+[0-9]+)\b", re.I), "ns", 2),
+    (re.compile(r"^(Anejo\s+[A-Z])\b", re.IGNORECASE), "ns", 1),
+    (re.compile(r"^(Secci[oó]n\s+[A-Z]*\s*[0-9]+)\b", re.IGNORECASE), "ns", 1),
+    (re.compile(r"^(Cap[ií]tulo\s+[IVXLC0-9]+)\b", re.IGNORECASE), "ns", 1),
+    (re.compile(r"^(T[ií]tulo\s+[IVXLC0-9]+)\b", re.IGNORECASE), "ns", 1),
+    (re.compile(r"^(Art[ií]culo\s+[0-9]+)\b", re.IGNORECASE), "ns", 2),
     # dotted numbering -- `B.2.6.2`, `A.1.1`, `4.1`, `12`
     (re.compile(r"^([A-Z]\.[0-9]+(?:\.[0-9]+)*)\.?(?=[\s.]|$)"), "num", None),
     (re.compile(r"^([0-9]+(?:\.[0-9]+)*)\.?(?=\s|$)"), "num", None),
@@ -181,7 +206,8 @@ MARKER_RE = re.compile(r"^\s*([0-9]+|[a-zA-Z]|[ivxIVX]+)\s*[.)]\s*$")
 # and out of `marker`. That needs parsing, not recovery (#18); it addresses 158
 # of DccSUA's 359 list items that would otherwise have no cite.
 INLINE_MARKER_RE = re.compile(
-    r"^\s*([0-9]+(?:\.[0-9]+)*|[a-z]|[ivx]+)\s*[).]?\s+(?=[A-ZÁÉÍÓÚÜÑ])")
+    r"^\s*([0-9]+(?:\.[0-9]+)*|[a-z]|[ivx]+)\s*[).]?\s+(?=[A-ZÁÉÍÓÚÜÑ])"
+)
 
 # Vertical indent step, in points, that separates a nested list item from its
 # sibling. HABITABILIDAD prints top-level items at `bbox.l` ~70 and their
@@ -214,6 +240,7 @@ MAX_PROMOTED_HEADING = 100
 # --------------------------------------------------------------------------- #
 # text repair and normalization
 # --------------------------------------------------------------------------- #
+
 
 def repair(text: str, ocr: bool) -> str:
     """Deterministic repairs on the rendered `text` (#28).
@@ -254,15 +281,15 @@ def normalize(text: str) -> str:
     s = unicodedata.normalize("NFD", s)
     s = "".join(c for c in s if unicodedata.category(c) != "Mn")
     # unit folding -- all three spellings occur (107 / 67 / 35 corpus-wide)
-    s = re.sub(r"\bm\s*[²2?]", "m2", s)
-    return s
+    return re.sub(r"\bm\s*[²2?]", "m2", s)
 
 
 # --------------------------------------------------------------------------- #
 # geometry
 # --------------------------------------------------------------------------- #
 
-def top_key(prov: dict) -> float:
+
+def top_key(prov: Node) -> float:
     """Sort key for reading order: smaller is higher on the page.
 
     docling emits text bboxes BOTTOMLEFT and table cells TOPLEFT, so the origin
@@ -279,21 +306,26 @@ def top_key(prov: dict) -> float:
 LINE_BAND = 4.0
 
 
-def inside(box: dict, outer: dict, pad: float = 2.0) -> bool:
+def inside(box: Box, outer: Box, pad: float = 2.0) -> bool:
     """Is `box` contained in `outer`? Both must be BOTTOMLEFT."""
     if not box or not outer:
         return False
     lo_b, hi_b = min(box["t"], box["b"]), max(box["t"], box["b"])
     lo_o, hi_o = min(outer["t"], outer["b"]), max(outer["t"], outer["b"])
-    return (box["l"] >= outer["l"] - pad and box["r"] <= outer["r"] + pad
-            and lo_b >= lo_o - pad and hi_b <= hi_o + pad)
+    return (
+        box["l"] >= outer["l"] - pad
+        and box["r"] <= outer["r"] + pad
+        and lo_b >= lo_o - pad
+        and hi_b <= hi_o + pad
+    )
 
 
 # --------------------------------------------------------------------------- #
 # cites and the heading spine
 # --------------------------------------------------------------------------- #
 
-def parse_cite(text: str):
+
+def parse_cite(text: str) -> tuple[str | None, str | None, int | None]:
     """Return (printed_cite, kind, rank) for a heading, or (None, None, None).
 
     `kind` is `num` for dotted numbering, which nests by prefix, or `ns` for a
@@ -312,11 +344,11 @@ def cite_path(cite: str) -> str:
     """Slug used inside an id. `Artículo 14` -> `art14`, `B.2.6` -> `B.2.6`."""
     s = unicodedata.normalize("NFD", cite)
     s = "".join(c for c in s if unicodedata.category(c) != "Mn")
-    s = re.sub(r"^Art[ií]?culo\s*", "art", s, flags=re.I)
-    s = re.sub(r"^Anejo\s*", "anejo", s, flags=re.I)
-    s = re.sub(r"^Secci[oó]?n\s*", "sec", s, flags=re.I)
-    s = re.sub(r"^Cap[ií]?tulo\s*", "cap", s, flags=re.I)
-    s = re.sub(r"^T[ií]?tulo\s*", "tit", s, flags=re.I)
+    s = re.sub(r"^Art[ií]?culo\s*", "art", s, flags=re.IGNORECASE)
+    s = re.sub(r"^Anejo\s*", "anejo", s, flags=re.IGNORECASE)
+    s = re.sub(r"^Secci[oó]?n\s*", "sec", s, flags=re.IGNORECASE)
+    s = re.sub(r"^Cap[ií]?tulo\s*", "cap", s, flags=re.IGNORECASE)
+    s = re.sub(r"^T[ií]?tulo\s*", "tit", s, flags=re.IGNORECASE)
     # Trailing punctuation is part of the printed cite (`a)`, `1.`) but not of
     # the address: `art14.1.a` reads as an id, `art14.1.a)` reads as a typo.
     # `cite` keeps what the page prints; `id` keeps what is addressable.
@@ -340,9 +372,12 @@ class Spine:
     outright; the emitted tree is inverted (#14).
     """
 
-    def __init__(self):
-        # entries: (parts, rank, id) -- parts is [] for a namespace heading
-        self.stack = []
+    def __init__(self) -> None:
+        # entries: (parts, rank, id) -- parts is [] for a namespace heading, and
+        # `rank` is None for a dotted-numbering one. The None is load-bearing:
+        # `push_numbered` reads it to tell "still inside the same numbering
+        # space" from "hit the namespace that opened it".
+        self.stack: list[tuple[list[str], int | None, str]] = []
 
     def parent(self) -> str:
         return self.stack[-1][2] if self.stack else ""
@@ -352,12 +387,12 @@ class Spine:
         while self.stack:
             parts_top, rank_top, _ = self.stack[-1]
             if rank_top == UNNUMBERED:
-                self.stack.pop()                        # a leaf never parents a
-                continue                                # numbered heading
+                self.stack.pop()  # a leaf never parents a
+                continue  # numbered heading
             if rank_top is not None:
-                break                                   # namespace: stop here
+                break  # namespace: stop here
             if parts[: len(parts_top)] == parts_top and len(parts_top) < len(parts):
-                break                                   # proper prefix: parent
+                break  # proper prefix: parent
             self.stack.pop()
         parent = self.parent()
         self.stack.append((parts, None, ident))
@@ -367,7 +402,7 @@ class Spine:
         while self.stack:
             _, rank_top, _ = self.stack[-1]
             if rank_top is not None and rank_top < rank:
-                break                                   # coarser namespace: parent
+                break  # coarser namespace: parent
             self.stack.pop()
         parent = self.parent()
         self.stack.append(([], rank, ident))
@@ -391,6 +426,7 @@ class Spine:
 # ingest
 # --------------------------------------------------------------------------- #
 
+
 def load_provenance(doc: str, *, tuned: Path) -> list[tuple[int, int, str]]:
     """Per-page-range extraction source, from the Stage 1 pipeline record.
 
@@ -406,16 +442,19 @@ def load_provenance(doc: str, *, tuned: Path) -> list[tuple[int, int, str]]:
         return []
     ranges = cfg.get("ocr_page_ranges")
     if not ranges:
-        sys.exit(f"{doc}.pipeline.json has profile 'ocr' but no ocr_page_ranges; "
-                 f"rerun scripts/convert.py or backfill the measured ranges")
+        sys.exit(
+            f"{doc}.pipeline.json has profile 'ocr' but no ocr_page_ranges; "
+            f"rerun scripts/convert.py or backfill the measured ranges"
+        )
     return [(int(a), int(b), "ocr") for a, b in ranges]
 
 
-def ingest_doc(doc: str, rows: list, stats: dict, *, tuned: Path):
+def ingest_doc(
+    doc: str, rows: list[Row], stats: dict[str, int], *, tuned: Path
+) -> None:
     data = json.loads((tuned / f"{doc}.json").read_text())
     code = DOC_CODES.get(doc) or re.sub(r"[^A-Za-z0-9]", "", doc)[:3].upper()
     ocr_ranges = load_provenance(doc, tuned=tuned)
-    pages = {int(k): v for k, v in data["pages"].items()}
 
     def is_ocr(page: int) -> bool:
         return any(a <= page <= b for a, b, _ in ocr_ranges)
@@ -479,7 +518,13 @@ def ingest_doc(doc: str, rows: list, stats: dict, *, tuned: Path):
     # aparcamiento` comes back as `B.2.6.3. de aparcamiento. Áreas`, because a
     # heading split across three boxes on one line has three near-identical
     # `t` values and no ordering between them.
-    items.sort(key=lambda x: (x[0], round(x[1] / LINE_BAND), x[4].get("bbox", {}).get("l", 0.0)))
+    items.sort(
+        key=lambda x: (
+            x[0],
+            round(x[1] / LINE_BAND),
+            x[4].get("bbox", {}).get("l", 0.0),
+        )
+    )
 
     spine = Spine()
     list_stack: list[tuple[float, str]] = []
@@ -512,8 +557,11 @@ def ingest_doc(doc: str, rows: list, stats: dict, *, tuned: Path):
         bbox = prov.get("bbox") or {}
         # Captions survive the filter: they are how the agent points at a figure
         # it cannot read (#3).
-        if (kind == "text" and label != "caption"
-                and any(inside(bbox, f) for f in figures.get(page, []))):
+        if (
+            kind == "text"
+            and label != "caption"
+            and any(inside(bbox, f) for f in figures.get(page, []))
+        ):
             stats["figure_labels"] += 1
             continue
         if kind == "text" and any(inside(bbox, b) for b in table_boxes.get(page, [])):
@@ -524,11 +572,15 @@ def ingest_doc(doc: str, rows: list, stats: dict, *, tuned: Path):
 
         if kind == "picture":
             cite = table_cite(node)
-            caption = " ".join((c.get("text") or "") for c in node.get("captions") or []
-                               if isinstance(c, dict)).strip()
+            caption = " ".join(
+                (c.get("text") or "")
+                for c in node.get("captions") or []
+                if isinstance(c, dict)
+            ).strip()
             ident = make_id(page, cite_path(cite) if cite else None)
-            rows.append(row(ident, doc, page, cite, spine.parent(), "picture",
-                            caption, ocr))
+            rows.append(
+                row(ident, doc, page, cite, spine.parent(), "picture", caption, ocr)
+            )
             stats["pictures"] += 1
             continue
 
@@ -556,22 +608,34 @@ def ingest_doc(doc: str, rows: list, stats: dict, *, tuned: Path):
             if not raw:
                 continue
 
-        if (label in ("list_item", "text") and len(raw) <= MAX_PROMOTED_HEADING
-                and PROMOTABLE_HEADING_RE.match(raw)):
+        if (
+            label in ("list_item", "text")
+            and len(raw) <= MAX_PROMOTED_HEADING
+            and PROMOTABLE_HEADING_RE.match(raw)
+        ):
             label = "section_header"
             stats["promoted_headings"] += 1
 
         if label == "section_header":
             cite, ckind, rank = parse_cite(raw)
             ident = make_id(page, cite_path(cite) if cite else None)
+            # `parse_cite`'s three return slots are correlated -- a `num` always
+            # carries a cite, an `ns` always carries a rank -- but the type is a
+            # plain tuple, so nothing propagates that from the `ckind` test to
+            # the other two slots. Asserting states the invariant where it is
+            # relied on, and fails loudly if a new CITE_PATTERNS row breaks it.
             if ckind == "num":
+                assert cite is not None
                 parent = spine.push_numbered(cite_path(cite), ident)
             elif ckind == "ns":
+                assert rank is not None
                 parent = spine.push_namespace(rank, ident)
             else:
                 parent = spine.push_unnumbered(ident)
                 stats["unnumbered_headings"] += 1
-            rows.append(row(ident, doc, page, cite or "", parent, "section_header", raw, ocr))
+            rows.append(
+                row(ident, doc, page, cite or "", parent, "section_header", raw, ocr)
+            )
             list_stack.clear()
             stats["headings"] += 1
             continue
@@ -599,8 +663,11 @@ def ingest_doc(doc: str, rows: list, stats: dict, *, tuned: Path):
 
         if cite:
             base = parent.split(":", 2)[2] if parent.count(":") >= 2 else ""
-            path = (f"{base}.{cite_path(cite)}"
-                    if base and not base.startswith("§") else cite_path(cite))
+            path = (
+                f"{base}.{cite_path(cite)}"
+                if base and not base.startswith("§")
+                else cite_path(cite)
+            )
         else:
             path = None
             if label == "list_item":
@@ -616,7 +683,7 @@ def ingest_doc(doc: str, rows: list, stats: dict, *, tuned: Path):
         stats["body"] += 1
 
 
-def serialize_table(node) -> str | None:
+def serialize_table(node: Node) -> str | None:
     """One record per table -- atomic on read (#4), cells inline for search.
 
     #32 collapsed the substrate to a single `corpus.tsv` and dropped the
@@ -641,7 +708,7 @@ def serialize_table(node) -> str | None:
     return " ¶ ".join(" | ".join(cell for cell in r) for r in grid)
 
 
-def table_cite(node) -> str:
+def table_cite(node: Node) -> str:
     for cap in node.get("captions") or []:
         text = (cap.get("text") or "") if isinstance(cap, dict) else ""
         cite, _, _ = parse_cite(text)
@@ -650,14 +717,30 @@ def table_cite(node) -> str:
     return ""
 
 
-def row(ident, doc, page, cite, parent, label, raw, ocr) -> dict:
+def row(
+    ident: str,
+    doc: str,
+    page: int,
+    cite: str,
+    parent: str,
+    label: str,
+    raw: str,
+    ocr: bool,
+) -> Row:
     text = repair(raw, ocr)
-    return {"id": ident, "doc": doc, "page": page, "cite": cite,
-            "parent_id": parent, "label": label, "text": text,
-            "norm": normalize(text)}
+    return {
+        "id": ident,
+        "doc": doc,
+        "page": page,
+        "cite": cite,
+        "parent_id": parent,
+        "label": label,
+        "text": text,
+        "norm": normalize(text),
+    }
 
 
-def write_tsv(path: Path, columns: list[str], rows: list[dict]) -> None:
+def write_tsv(path: Path, columns: list[str], rows: list[Row]) -> None:
     """Plain TSV -- no quoting, no escaping, so `awk -F'\\t'` and `cut` just work.
 
     The substrate is read by line-oriented shell tools (#33), which do not
@@ -668,17 +751,30 @@ def write_tsv(path: Path, columns: list[str], rows: list[dict]) -> None:
     with path.open("w") as fh:
         fh.write("\t".join(columns) + "\n")
         for r in rows:
-            fh.write("\t".join(
-                str(r.get(c, "")).replace("\t", " ").replace("\n", " ").replace("\r", " ")
-                for c in columns) + "\n")
+            fh.write(
+                "\t".join(
+                    str(r.get(c, ""))
+                    .replace("\t", " ")
+                    .replace("\n", " ")
+                    .replace("\r", " ")
+                    for c in columns
+                )
+                + "\n"
+            )
 
 
-def main(argv=None):
-    ap = argparse.ArgumentParser(prog="uv run -m urbandocs.ingest",
-                                 description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--root", type=Path, default=None,
-                    help="repo root; defaults to $URBANDOCS_ROOT or the enclosing repo")
+def main(argv: Sequence[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(
+        prog="uv run -m urbandocs.ingest",
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    ap.add_argument(
+        "--root",
+        type=Path,
+        default=None,
+        help="repo root; defaults to $URBANDOCS_ROOT or the enclosing repo",
+    )
     ap.add_argument("--tuned", type=Path, default=None)
     ap.add_argument("--out", type=Path, default=None)
     ap.add_argument("--docs", nargs="*", default=DOCS)
@@ -690,9 +786,9 @@ def main(argv=None):
     tuned = args.tuned or paths.tuned_dir(args.root)
     out = args.out or paths.corpus_tsv(args.root)
 
-    rows: list[dict] = []
-    stats = defaultdict(int)
-    prov_rows = []
+    rows: list[Row] = []
+    stats: defaultdict[str, int] = defaultdict(int)
+    prov_rows: list[Row] = []
     for doc in args.docs:
         before = len(rows)
         ingest_doc(doc, rows, stats, tuned=tuned)
@@ -700,20 +796,35 @@ def main(argv=None):
         ocr = load_provenance(doc, tuned=tuned)
         if ocr:
             covered = sorted(ocr)
-            prov_rows += [{"doc": doc, "page_from": a, "page_to": b, "source": "ocr"}
-                          for a, b, _ in covered]
+            prov_rows += [
+                {"doc": doc, "page_from": a, "page_to": b, "source": "ocr"}
+                for a, b, _ in covered
+            ]
             cursor = 1
             for a, b, _ in covered:
                 if cursor < a:
-                    prov_rows.append({"doc": doc, "page_from": cursor,
-                                      "page_to": a - 1, "source": "native"})
+                    prov_rows.append(
+                        {
+                            "doc": doc,
+                            "page_from": cursor,
+                            "page_to": a - 1,
+                            "source": "native",
+                        }
+                    )
                 cursor = b + 1
             if cursor <= n_pages:
-                prov_rows.append({"doc": doc, "page_from": cursor,
-                                  "page_to": n_pages, "source": "native"})
+                prov_rows.append(
+                    {
+                        "doc": doc,
+                        "page_from": cursor,
+                        "page_to": n_pages,
+                        "source": "native",
+                    }
+                )
         else:
-            prov_rows.append({"doc": doc, "page_from": 1, "page_to": n_pages,
-                              "source": "native"})
+            prov_rows.append(
+                {"doc": doc, "page_from": 1, "page_to": n_pages, "source": "native"}
+            )
         if args.stats:
             print(f"{doc}: {len(rows) - before} records", file=sys.stderr)
 

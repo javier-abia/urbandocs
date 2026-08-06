@@ -10,16 +10,208 @@ requires-python = ">=3.14"
 # empty is itself an assertion worth noticing if it ever changes.
 dependencies = []
 
-# Only what #46's own tests need to run. ruff, ty and the rest of the toolchain
-# are #48's; this group exists so the tests landed here are not dead weight.
+# The whole toolchain (#48). `uv sync` installs this group by default, so one
+# command gets a contributor or an agent session to a state where every gate
+# runs; nothing else needs installing.
+#
+# Pinning (#48). `uv.lock` is the real pin -- it is committed, and `uv sync`
+# reproduces these versions exactly. The ranges here express *intent*, and only
+# bind when someone deliberately runs `uv lock --upgrade`:
+#
+#   ruff   minor-pinned. Ruff ships new rules in minor releases, and a rule
+#          arriving unasked-for turns a green CI red on a day nobody touched
+#          the gate.
+#   ty     pinned exactly. It is 0.0.x with no semver promise at all, and it is
+#          the type gate -- map #45 accepted it as younger and still moving, so
+#          the cost of that bet is paid here, as an exact pin plus a deliberate
+#          upgrade step. See "A `ty` fallback" in the map's fog.
+#   pytest major-pinned. pytest 9 dropped deprecated APIs; 10 will too.
 [dependency-groups]
-dev = ["pytest>=8"]
+dev = [
+    "pytest>=9,<10",
+    "ruff>=0.16.1,<0.17",
+    "ty==0.0.69",
+]
+
+# --------------------------------------------------------------------------
+# Lint and format: ruff (#48)
+# --------------------------------------------------------------------------
+#
+# All tool config lives in this file. A standalone `ruff.toml` would take
+# precedence over these tables *silently* if one were ever added, and in a repo
+# where agents land and read one file to learn the conventions, one place beats
+# one-file-per-tool.
+#
+# `target-version` is deliberately unset: ruff reads `project.requires-python`
+# (">=3.14"), so the Python floor is stated once and cannot drift.
+
+[tool.ruff]
+# Python and this file, and nothing else. Stated because ruff's default `include`
+# is wider than it looks: `ruff format` reformats fenced Python blocks inside
+# Markdown, and on first run it rewrote a code block in
+# `docs/research/tuned-extraction-fidelity.md` -- a transcript of a snippet that
+# was actually run, and evidence for a decision already made (map #45). A
+# formatter silently editing the evidence is not a gate doing its job.
+include = ["*.py", "*.pyi", "**/pyproject.toml"]
+
+# Gates are scoped to the engine package and its tests, deliberately (map #45).
+# `scripts/` holds nine research scripts that are frozen evidence for decisions
+# already made, not a maintained library; `tools/docling-convert/` resolves its
+# own ML toolchain separately and is not a workspace member (#46).
+extend-exclude = ["scripts", "tools"]
+
+# Ruff's own default, and the width `ruff format` targets. The repo had no style
+# to preserve, so the tie breaks toward the number that needs no explanation.
+line-length = 88
+
+[tool.ruff.lint]
+# Chosen to do three jobs and refuse a fourth. The gate catches real defects,
+# enforces the typing decision, and settles style without argument -- it does
+# *not* relitigate the design of code that predates it. That is why the
+# complexity counters (C901, PLR09xx) and the docstring mandate (D) are absent:
+# on today's code they fire only on `ingest.py`'s document-processing pipeline,
+# where they would demand a refactor this ticket has no business ordering. They
+# can be added later, with evidence.
+select = [
+    "F",     # pyflakes -- earned its place immediately: found an unused `csv`
+             # import and a dead `pages` assignment in ingest.py on first run
+    "E4",    # imports
+    "E7",    # statements
+    "E9",    # syntax / IO errors
+    "E501",  # line length -- the formatter cannot rewrap comments or strings,
+             # so this is the half of width it does not own
+    "W",     # trailing whitespace and friends (formatter-fixable)
+    "I",     # import sorting
+    "UP",    # pyupgrade -- free value on a 3.14-only floor
+    "B",     # bugbear
+    "C4",    # comprehensions
+    "SIM",   # simplifications
+    "RET",   # return-statement hygiene
+    "PTH",   # pathlib over os.path, which is already how this repo is written
+    "ARG",   # unused arguments -- true-positive on first run (see below)
+    "TID",   # tidy imports
+    "TC",    # runtime-unneeded imports into `if TYPE_CHECKING`
+    "N",     # pep8-naming
+    "PERF",  # obvious performance anti-patterns
+    "FURB",  # refurb -- 10 auto-fixable `re.I` -> `re.IGNORECASE` on first run
+    "ANN",   # annotations. This is the ruff half of map #45's "strict typing":
+             # ty *infers* types, so without ANN an unannotated signature is
+             # silently `Unknown` rather than an error. ANN forces the
+             # annotation to exist; ty then checks it.
+    "RUF",   # ruff-specific
+]
+
+ignore = [
+    # Ambiguous-unicode. Off on measurement, not taste: `ingest.py`'s SYMBOL_MAP
+    # decodes private-use codepoints to `±`, `α`, `Δ`, `μ` (#14), and `repair()`
+    # rewrites the extractor's `><` to a real `×`. Those characters are the
+    # corpus's own, verified in context. RUF001 flagged exactly those two lines
+    # -- the two most deliberately correct in the file -- so it is worse than
+    # useless here.
+    "RUF001",
+    "RUF002",
+    "RUF003",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# A test function signature carries no contract for anyone to call against, and
+# the annotations would be `-> None` twenty times over. Everything else in the
+# rule set still applies to tests.
+"tests/**" = ["ANN"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["urbandocs"]
+
+[tool.ruff.lint.flake8-tidy-imports]
+# `src/` layout with one flat package: an absolute import always works and always
+# says which package it came from.
+ban-relative-imports = "all"
+
+[tool.ruff.format]
+# Ruff's defaults, stated rather than assumed. The existing code already matches
+# them -- landing the formatter moved 4 lines in 2 files -- so this records a
+# style the repo had already converged on by hand.
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+
+# --------------------------------------------------------------------------
+# Types: ty (#48)
+# --------------------------------------------------------------------------
+
+[tool.ty.src]
+# Same scope as ruff: the engine package and its tests.
+include = ["src", "tests"]
+
+[tool.ty.rules]
+# What "strict" concretely means in ty 0.0.69.
+#
+# ty has no `strict = true` dial. It ships each rule at a default level, and the
+# strictness knob is which `ignore`/`warn` rules you promote to `error`. This
+# list is enumerated rather than a blanket `--error all` on purpose: a blanket
+# would make every rule a *future* ty release invents into an instant hard error.
+# Enumerating means new rules arrive at their own default and get adopted
+# deliberately -- which is the same bet as the exact pin above.
+
+# The one that makes the type gate real. Defaults to `ignore`, so a bare `dict`
+# or `list` annotation silently resolves its parameters to `Unknown` and the
+# checker stops checking. It fired 8 times on the existing package -- every
+# elevated diagnostic in this repo today is this rule.
+missing-type-argument = "error"
+
+# A name that is bound on some paths and not others. Ruff's F821 catches the
+# definite cases; this is the branch-dependent half.
+possibly-unresolved-reference = "error"
+
+division-by-zero = "error"
+
+# Keep suppressions honest. For a checker that is still moving, the failure mode
+# is a `# ty: ignore` outliving the bug it hid, quietly disabling a rule nobody
+# remembers adding.
+unused-ignore-comment = "error"
+invalid-ignore-comment = "error"
+
+redundant-cast = "error"
+
+# A stray `reveal_type` is debugging scaffolding; it must not reach `main`.
+undefined-reveal = "error"
+
+# Only fires on *our* use of a deprecated API. With the exact pin above, this
+# can only appear on a deliberate upgrade -- which is precisely when the work it
+# names is worth seeing.
+deprecated = "error"
+
+# --------------------------------------------------------------------------
+# Tests: pytest (#48)
+# --------------------------------------------------------------------------
 
 [tool.pytest.ini_options]
-# `src/` layout: tests import `urbandocs` from the source tree. Kept here rather
-# than left to #48 because it is a consequence of the layout, not a tool choice.
+minversion = "9"
+
+# `src/` layout: tests import `urbandocs` from the source tree. A consequence of
+# the layout (#46), not a tool choice.
 pythonpath = ["src"]
 testpaths = ["tests"]
+
+# Where the fixture corpus lives is #49's call, not this ticket's. Nothing here
+# presumes an answer: `urbandocs.paths.repo_root(explicit)` already lets a test
+# point at any root (#46), so #49 can add a `conftest.py` without touching this
+# config.
+
+addopts = [
+    "-ra",               # say why anything was skipped or xfailed
+    "--strict-markers",  # a typo'd marker is an error, not a silent no-op
+    "--strict-config",   # a typo'd key in *this* table is an error too
+    "--import-mode=importlib",
+]
+
+# A test that starts passing must be noticed. `xfail` is a claim about a known
+# failure; when it stops being true, that is a result.
+xfail_strict = true
+
+# Warnings are failures. The corpus pipeline is stdlib and emits none today, so
+# this costs nothing now and catches the first deprecation the moment it lands.
+filterwarnings = ["error"]
 
 [build-system]
 requires = ["hatchling"]

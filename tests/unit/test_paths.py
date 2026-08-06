@@ -29,12 +29,12 @@ def test_anchor_search_finds_this_repo(monkeypatch):
     assert (root / "src" / "urbandocs" / "paths.py").is_file()
 
 
-def test_missing_root_raises_rather_than_guessing(tmp_path, monkeypatch):
+def test_missing_root_raises_rather_than_guessing(monkeypatch):
     # The old behaviour resolved to *something* no matter what. Refusing is the
     # point: a bad root must fail here, not three call frames later.
     monkeypatch.delenv(paths.ENV_VAR, raising=False)
     monkeypatch.setattr(paths, "ANCHOR", "definitely-not-a-real-marker")
-    with pytest.raises(paths.RootNotFound):
+    with pytest.raises(paths.RootNotFoundError):
         paths.repo_root()
 
 

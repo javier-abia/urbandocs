@@ -33,7 +33,7 @@ ANCHOR = "pyproject.toml"
 ENV_VAR = "URBANDOCS_ROOT"
 
 
-class RootNotFound(RuntimeError):
+class RootNotFoundError(RuntimeError):
     """No repo root above this module, and none given.
 
     Raised rather than falling back to the working directory: a wrong root fails
@@ -55,7 +55,7 @@ def repo_root(explicit: str | Path | None = None) -> Path:
         if (directory / ANCHOR).is_file():
             return directory
 
-    raise RootNotFound(
+    raise RootNotFoundError(
         f"no {ANCHOR} above {here}; pass an explicit root or set ${ENV_VAR}"
     )
 
