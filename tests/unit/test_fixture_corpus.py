@@ -127,15 +127,13 @@ def test_no_record_parents_across_documents(corpus_rows):
 
 
 def test_id_prefix_matches_the_documents_code(corpus_rows):
-    """`HAB` is deliberately dead, so the code is not derivable -- it is looked up.
-
-    A fixture record whose id said `DOG` while its `doc` said `dog-habitabilidad`
-    would resolve to the wrong decree, which is the exact failure #41 renamed the
-    code to prevent.
+    """`doc` carries the doc key, not the filename (#57), so a record's id and its
+    own `doc` field must agree on that key outright -- a fixture record whose id
+    said `DOG` while its `doc` said `dog-habitabilidad` would resolve to the wrong
+    decree, which is the exact failure #41 renamed the code to prevent.
     """
     for r in corpus_rows:
-        code = ingest.DOC_CODES[r["doc"]]
-        assert r["id"].startswith(f"{code}:p{r['page']}:"), r["id"]
+        assert r["id"].startswith(f"{r['doc']}:p{r['page']}:"), r["id"]
 
 
 def test_every_records_page_falls_in_a_provenance_range(corpus_rows, provenance_rows):

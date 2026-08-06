@@ -100,6 +100,17 @@ DOCS = ["DccSUA", "DOG_2025", "dog-habitabilidad"]
 #     different provision that now occupies that address.
 DOC_CODES = {"DccSUA": "SUA", "DOG_2025": "DOG", "dog-habitabilidad": "D128"}
 
+
+def doc_code(doc: str) -> str:
+    """The short key minted into ids -- and, per #57, into the `doc` column.
+
+    Both the substrate and its provenance sidecar key on this rather than the
+    source filename, so a citation like `D128:p43:§6` and its row's `doc` field
+    name the same document instead of disagreeing (#42).
+    """
+    return DOC_CODES.get(doc) or re.sub(r"[^A-Za-z0-9]", "", doc)[:3].upper()
+
+
 COLUMNS = ["id", "doc", "page", "cite", "parent_id", "label", "text", "norm"]
 
 # Furniture is labelled, not contained -- `furniture.children` is empty in all
@@ -477,7 +488,7 @@ def ingest_doc(
     doc: str, rows: list[Row], stats: dict[str, int], *, tuned: Path
 ) -> None:
     data = json.loads((tuned / f"{doc}.json").read_text())
-    code = DOC_CODES.get(doc) or re.sub(r"[^A-Za-z0-9]", "", doc)[:3].upper()
+    code = doc_code(doc)
     ocr_ranges = load_provenance(doc, tuned=tuned)
 
     def is_ocr(page: int) -> bool:
@@ -603,7 +614,7 @@ def ingest_doc(
             ).strip()
             ident = make_id(page, cite_path(cite) if cite else None)
             rows.append(
-                row(ident, doc, page, cite, spine.parent(), "picture", caption, ocr)
+                row(ident, code, page, cite, spine.parent(), "picture", caption, ocr)
             )
             stats["pictures"] += 1
             continue
@@ -616,7 +627,7 @@ def ingest_doc(
             cite = table_cite(node)
             parent = spine.parent()
             ident = make_id(page, cite_path(cite) if cite else None)
-            rows.append(row(ident, doc, page, cite, parent, "table", text, ocr))
+            rows.append(row(ident, code, page, cite, parent, "table", text, ocr))
             stats["tables"] += 1
             continue
 
@@ -658,7 +669,7 @@ def ingest_doc(
                 parent = spine.push_unnumbered(ident)
                 stats["unnumbered_headings"] += 1
             rows.append(
-                row(ident, doc, page, cite or "", parent, "section_header", raw, ocr)
+                row(ident, code, page, cite or "", parent, "section_header", raw, ocr)
             )
             list_stack.clear()
             stats["headings"] += 1
@@ -703,7 +714,7 @@ def ingest_doc(
         ident = make_id(page, path)
         if label == "list_item":
             list_stack.append((bbox.get("l", 0.0), ident))
-        rows.append(row(ident, doc, page, cite, parent, label, raw, ocr))
+        rows.append(row(ident, code, page, cite, parent, label, raw, ocr))
         stats["body"] += 1
 
 
@@ -818,12 +829,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     for doc in args.docs:
         before = len(rows)
         ingest_doc(doc, rows, stats, tuned=tuned)
+        code = doc_code(doc)
         n_pages = len(json.loads((tuned / f"{doc}.json").read_text())["pages"])
         ocr = load_provenance(doc, tuned=tuned)
         if ocr:
             covered = sorted(ocr)
             prov_rows += [
-                {"doc": doc, "page_from": a, "page_to": b, "source": "ocr"}
+                {"doc": code, "page_from": a, "page_to": b, "source": "ocr"}
                 for a, b, _ in covered
             ]
             cursor = 1
@@ -831,7 +843,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 if cursor < a:
                     prov_rows.append(
                         {
-                            "doc": doc,
+                            "doc": code,
                             "page_from": cursor,
                             "page_to": a - 1,
                             "source": "native",
@@ -841,7 +853,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             if cursor <= n_pages:
                 prov_rows.append(
                     {
-                        "doc": doc,
+                        "doc": code,
                         "page_from": cursor,
                         "page_to": n_pages,
                         "source": "native",
@@ -849,7 +861,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 )
         else:
             prov_rows.append(
-                {"doc": doc, "page_from": 1, "page_to": n_pages, "source": "native"}
+                {"doc": code, "page_from": 1, "page_to": n_pages, "source": "native"}
             )
         if args.stats:
             print(f"{doc}: {len(rows) - before} records", file=sys.stderr)
