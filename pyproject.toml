@@ -26,8 +26,17 @@ dependencies = []
 #          the cost of that bet is paid here, as an exact pin plus a deliberate
 #          upgrade step. See "A `ty` fallback" in the map's fog.
 #   pytest major-pinned. pytest 9 dropped deprecated APIs; 10 will too.
+#
+#   pre-commit
+#          major-pinned (#50). It is only the hook *runner* -- the hooks
+#          themselves are pinned by `rev` in `.pre-commit-config.yaml` -- so
+#          the blast radius of a minor bump is the runner's own CLI. Listed
+#          here rather than assumed globally so that `uv sync` alone leaves a
+#          clone able to run `uv run pre-commit install`, which is the whole
+#          claim AGENTS.md makes about one command.
 [dependency-groups]
 dev = [
+    "pre-commit>=4,<5",
     "pytest>=9,<10",
     "ruff>=0.16.1,<0.17",
     "ty==0.0.69",
