@@ -123,3 +123,29 @@ repos:
         types_or: [python, pyi]
         exclude: ^(scripts|tools)/
         require_serial: true
+
+  # --------------------------------------------------------------------------
+  # Commit message: AGENTS.md's two conventions (#51)
+  # --------------------------------------------------------------------------
+  #
+  # `repo: local`, one purpose-built script, not an off-the-shelf Conventional
+  # Commits hook (commitizen, conventional-pre-commit): the AI-trailer rule is
+  # this repo's own and no published hook knows it, so a second tool would only
+  # cover half the job. One script covering both keeps the two rules -- and
+  # their failure messages -- in one place.
+  #
+  # `stages: [commit-msg]` is what makes this a commit-msg hook rather than a
+  # pre-commit one: pre-commit runs it against the message file git passes
+  # (`$1`), not against staged files, so it carries none of the `types_or`/
+  # `exclude` filtering the hooks above need.
+  #
+  # This is the one hook in this file that only rejects (see the module
+  # docstring for why: a malformed subject or an AI trailer can't be safely
+  # rewritten) -- everything else here fixes what it can.
+  - repo: local
+    hooks:
+      - id: check-commit-msg
+        name: check commit message (Conventional Commits, no AI attribution)
+        entry: uv run --frozen python -m urbandocs.check_commit_msg
+        language: system
+        stages: [commit-msg]
