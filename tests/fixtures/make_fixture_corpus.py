@@ -47,6 +47,7 @@ OUT_DIR = HERE / "corpus"
 # coverage assertion below still passes.
 PAGES: dict[str, dict[int, str]] = {
     "DccSUA": {
+        32: "records containing a `\"` -- the ones a default csv.reader corrupts",
         75: "tables, captions, a footnote, dotted `B.n.n` cites",
         76: "the corpus's deepest ancestor chain (7), a formula, a second table",
     },
@@ -136,6 +137,7 @@ def coverage(rows: list[dict]) -> dict[str, int]:
         "id disambiguated with ~": sum(1 for r in rows if "~" in r["id"]),
         "no cite": sum(1 for r in rows if not r["cite"]),
         "positional § id": sum(1 for r in rows if ":§" in r["id"]),
+        'text containing a "': sum(1 for r in rows if '"' in r["text"]),
         "table": sum(1 for r in rows if r["label"] == "table"),
         "caption": sum(1 for r in rows if r["label"] == "caption"),
         "picture": sum(1 for r in rows if r["label"] == "picture"),

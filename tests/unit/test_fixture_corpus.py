@@ -58,19 +58,34 @@ def test_no_field_contains_a_tab_or_newline(corpus_rows):
             assert "\t" not in value and "\r" not in value, f"{r['id']}.{column}"
 
 
-def test_a_quote_reader_would_disagree_with_the_writer(fixture_dir):
-    """Guards the reader, not the file: `QUOTE_NONE` is part of the contract.
+def test_quote_records_are_present_and_the_quoting_hazard_is_latent(fixture_dir,
+                                                                    corpus_rows):
+    """`"` in a record is a *latent* hazard, not a live defect. Measured, not assumed.
 
-    If a record ever opens with `"`, a default `csv.reader` silently swallows it
-    and glues fields together. Rather than wait for that record to appear, assert
-    the two readings agree today -- so the day one does appear, this is the test
-    that says which reader is right.
+    `write_tsv` emits no quoting and no escaping so that `cut` and `awk -F'\\t'`
+    work on the substrate (#33), which makes `csv.QUOTE_NONE` part of the read
+    contract. But a default `csv.reader` does **not** corrupt the corpus today:
+    Python only treats `"` as a quote character when it is *field-initial*, and no
+    field in the current 2,455-record rebuild starts with one -- both readings
+    agree, with zero ragged rows.
+
+    So the danger is one source edit away, not present: a record whose text opens
+    with a quoted definition would flip it. The fixture carries three real records
+    containing a `"` so that the day one does open with it, this is the test that
+    fails and says which reader is right -- rather than the loader silently
+    returning a short corpus.
     """
+    assert any('"' in r["text"] for r in corpus_rows), "fixture lost its quote records"
+
     with (fixture_dir / "corpus.tsv").open(newline="") as fh:
-        lenient = list(csv.reader(fh, delimiter="\t", quoting=csv.QUOTE_NONE))
+        correct = list(csv.reader(fh, delimiter="\t", quoting=csv.QUOTE_NONE))
     with (fixture_dir / "corpus.tsv").open(newline="") as fh:
         default = list(csv.reader(fh, delimiter="\t"))
-    assert lenient == default
+
+    assert all(len(row) == len(ingest.COLUMNS) for row in correct)
+    assert correct == default, (
+        "a field now starts with a quote -- the substrate has no escaping, so "
+        "csv.QUOTE_NONE is the only correct reader (#33)")
 
 
 # --------------------------------------------------------------------------- #
