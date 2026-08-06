@@ -1,26 +1,26 @@
 # Commit-time gates (#50, map #45).
 #
 # Why `pre-commit` and not Husky/lint-staged: this is a pure-Python repo with a
-# `uv.lock` and no `package.json`, and it is going to stay that way. The repo's
-# own `setup-pre-commit` skill is Node-based; using it would drag a Node
-# toolchain in to run a formatter that is already installed.
+# `uv.lock` and no `package.json`. The repo's own `setup-pre-commit` skill is
+# Node-based; using it would drag a Node toolchain in to run a formatter that
+# is already installed.
 #
 # The rule this file is built around: **agents commit here, so a hook fixes
 # rather than rejects wherever it can.** A hook that fails in a way an agent
-# cannot diagnose becomes a retry loop that burns a session. Everything that can
-# only reject -- `ty`, `pytest`, and the ruff rules with no safe fix -- lives in
-# CI (#52), not here.
+# cannot diagnose becomes a retry loop that burns a session. Everything that
+# can only reject -- `ty`, `pytest`, and the ruff rules with no safe fix --
+# lives in CI (#52), not here.
 #
 # Install (once per clone):
 #
 #     uv run pre-commit install
 #
-# See AGENTS.md. A clone that skips this is silently unhooked; CI runs the same
-# config over every file, so nothing lands unchecked either way.
+# See AGENTS.md. A clone that skips this is silently unhooked; CI runs the
+# same config over every file, so nothing lands unchecked either way.
 
 # `pre-commit install` wires both hook types from this one command. `commit-msg`
-# is listed before any commit-msg hook exists (#51 adds it) so that landing that
-# hook does not require every clone and every agent session to re-run install.
+# is listed before any commit-msg hook exists (#51 adds it) so that landing
+# that hook does not require every clone to re-run install.
 default_install_hook_types: [pre-commit, commit-msg]
 
 minimum_pre_commit_version: "4.0.0"
@@ -32,31 +32,14 @@ repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
     hooks:
-      # Both of these are *fixing* hooks, which is what makes their scope the
-      # most dangerous thing in this file: unscoped, they silently rewrite and
-      # stage the rewrite. The exclusion below is measured, not precautionary
-      # (#50):
+      # Both of these are *fixing* hooks, so scope is what matters: unscoped,
+      # they silently rewrite and stage the rewrite. `documentos/`,
+      # `tests/fixtures/` and `LICENSE` are byte-faithful artifacts, not
+      # source -- see AGENTS.md for what breaks if they're touched.
       #
-      #   tests/fixtures/  `corpus.tsv` has 15 `picture` rows whose last two
-      #                    columns (`text`, `norm`) are empty, so the line ends
-      #                    in two tabs. `trailing-whitespace` strips them, the
-      #                    rows become 6 columns instead of 8, and 5 of 40 unit
-      #                    tests fail -- on the fixture #49 exists to freeze.
-      #                    Trailing tabs in a TSV are data.
-      #
-      #   documentos/      The tuned docling artifacts are committed *inputs*,
-      #                    byte-for-byte as the converter emitted them. Ten of
-      #                    them end without a final newline and six contain
-      #                    CRLF; both hooks would "fix" all ten. Same argument
-      #                    #48 made when `ruff format` rewrote a transcript in
-      #                    docs/research/: a formatter editing the evidence is
-      #                    not a gate doing its job.
-      #
-      #   LICENSE          Verbatim legal text. Nobody gets to reflow it.
-      # `--markdown-linebreak-ext=md` keeps the two-trailing-spaces hard line
-      # break that Markdown gives meaning to. No `.md` in the repo uses one
-      # today, which is exactly why it would be destroyed without anyone
-      # noticing.
+      # `--markdown-linebreak-ext=md` preserves Markdown's two-trailing-spaces
+      # hard line break, which this hook would otherwise strip as trailing
+      # whitespace.
       - id: trailing-whitespace
         args: ["--markdown-linebreak-ext=md"]
         exclude: ^(documentos/|tests/fixtures/|LICENSE$)
@@ -64,20 +47,12 @@ repos:
       - id: end-of-file-fixer
         exclude: ^(documentos/|tests/fixtures/|LICENSE$)
 
-      # The repo legitimately commits multi-MB artifacts: the tuned docling
-      # JSON is a permanent *input* (.gitignore, #4 decision 5), and the
-      # largest is `DccSUA.json` at 2,044 KB. The threshold clears that with
-      # headroom rather than needing an allowlist that would go stale on the
-      # next re-conversion.
-      #
-      # What it is actually guarding against is the accident class: a source
-      # PDF from `documentos/` force-added past .gitignore (~20 MB of them), a
-      # wheel out of `.venv`, or the derived `corpus/`. All of those are well
-      # over 3 MB or arrive in bulk.
-      #
-      # Note this hook only checks files being *added*; modifying an
-      # already-tracked large file does not trip it, which is what makes a
-      # re-conversion of the docling artifacts painless.
+      # 3072 KB clears the largest committed artifact (`DccSUA.json`, 2044 KB)
+      # with headroom, rather than an allowlist that goes stale on the next
+      # re-conversion. Guards against the accident class: a source PDF force-
+      # added past .gitignore, a wheel from `.venv`, the derived `corpus/`.
+      # Only checks files being *added*, so re-converting a tracked docling
+      # artifact never trips it.
       - id: check-added-large-files
         args: ["--maxkb=3072"]
 
@@ -87,49 +62,28 @@ repos:
   #
   # The box this engine deploys to holds every architect's LLM provider keys,
   # #43 adds LiteLLM virtual keys on top, and agents commit here unattended --
-  # so `detect-private-key` alone is not enough: it matches PEM headers and
-  # nothing else, and none of this repo's real threats are PEM files.
+  # so `detect-private-key` alone isn't enough, since it only matches PEM
+  # headers.
   #
-  # `detect-secrets` over `gitleaks`, on two measurements (#50):
-  #
-  #   Coverage. Against five realistically-shaped LiteLLM virtual keys,
-  #   gitleaks caught 3/5 and detect-secrets 5/5. gitleaks' `generic-api-key`
-  #   rule is keyword-anchored, so a `sk-...` assigned to a name without
-  #   key/token/secret in it slips past; detect-secrets is entropy-anchored and
-  #   does not care what the name is. That property is what matters for #43's
-  #   auth material, whose shape nobody has decided yet. (gitleaks does ship a
-  #   dedicated `anthropic-api-key` rule and catches those cleanly -- the gap
-  #   is only in the generic case.)
-  #
-  #   Install cost. gitleaks' pre-commit hook is `language: golang`, so every
-  #   clone needs a Go toolchain to build it; the alternatives are
-  #   `language: docker_image` (containers are out of scope, map #45) or
-  #   `language: system` (unpinned, and it is not installed here).
-  #   detect-secrets is `language: python` -- pre-commit builds it in its own
-  #   venv from PyPI, pinned by `rev` above, touching nothing else.
-  #
-  # Both tools report zero findings on the 67 tracked files today, and a
-  # gitleaks scan of the full history (25 commits, 8.06 MB, 1.86s) is clean --
-  # so this starts from a genuinely empty baseline. It scans staged content
-  # only; history is already known clean and re-scanning it on every commit
-  # buys nothing.
+  # `detect-secrets` over `gitleaks`: entropy-anchored detection catches
+  # unlabelled keys that gitleaks' keyword-anchored rules miss (5/5 vs 3/5 on
+  # realistic LiteLLM virtual keys -- see #50), and it installs as a pure
+  # Python venv instead of needing a Go toolchain per clone. Scans staged
+  # content only; the full history is already known clean.
   #
   # False-positive escape hatch, in order of preference: a
-  # `# pragma: allowlist secret` comment on the offending line, or re-recording
-  # `.secrets.baseline` (committed, and empty today). detect-secrets is not a
-  # project dependency -- pre-commit builds it in its own venv -- so re-recording
-  # means `uvx --from 'detect-secrets==1.5.0' detect-secrets scan --baseline
-  # .secrets.baseline`, with the version matching the `rev` below.
+  # `# pragma: allowlist secret` comment on the offending line, or re-record
+  # `.secrets.baseline` with
+  # `uvx --from 'detect-secrets==1.5.0' detect-secrets scan --baseline .secrets.baseline`
+  # (version must match `rev` below).
   - repo: https://github.com/Yelp/detect-secrets
     rev: v1.5.0
     hooks:
       - id: detect-secrets
         args: ["--baseline", ".secrets.baseline"]
-        # Speed, measured: detect-secrets costs ~10s per MB on the tuned
-        # docling JSON (DccSUA.json, 2.0 MB: 19.7s; dog-habitabilidad.json,
-        # 1.0 MB: 10.0s), so re-staging all three artifacts would hang a commit
-        # for ~36 seconds with no indication why. They are docling's rendering
-        # of public regulatory PDFs and cannot contain a credential.
+        # ~10s/MB on the tuned docling JSON -- re-staging all three would hang
+        # a commit for ~36s with no indication why. They're docling's
+        # rendering of public regulatory PDFs and can't contain a credential.
         exclude: ^documentos/
 
   # --------------------------------------------------------------------------
@@ -137,29 +91,21 @@ repos:
   # --------------------------------------------------------------------------
   #
   # `repo: local` running the project's own ruff, deliberately, instead of the
-  # `astral-sh/ruff-pre-commit` mirror. The mirror would put a second pin
-  # (`rev: v0.16.1`) beside the one in `uv.lock`, and the whole point of #48's
-  # "all tool config in one file" is that there is one place to look. Two pins
-  # drift, and the failure mode is the quiet one: the hook formats with one
-  # ruff, CI checks with another, and the diff appears in review.
+  # `astral-sh/ruff-pre-commit` mirror -- that would put a second pin beside
+  # `uv.lock`'s, and the two can drift silently (hook formats with one ruff,
+  # CI checks with another). `uv run --frozen` resolves from the committed
+  # lock and refuses to update it, so commit-time and CI-time are the same
+  # binary by construction, and it self-heals a venv-less clone.
   #
-  # `uv run --frozen` resolves ruff from the committed `uv.lock` and refuses to
-  # update it, so commit-time and CI-time are the same binary by construction.
-  # It also syncs the venv if it is missing, so a fresh clone self-heals rather
-  # than failing with a message about a missing interpreter.
+  # Lint before format: `--fix` can leave a line the formatter then rewraps;
+  # the reverse order needs two passes to settle.
   #
-  # The linter runs before the formatter: `--fix` can leave a line the
-  # formatter then rewraps, and the reverse order needs two passes to settle.
-  #
-  # `--force-exclude` closes the trap #48 documented: pyproject's
-  # `extend-exclude` is honoured for *discovered* paths only, so a hook handing
-  # ruff a staged filename directly bypasses the repo's scoping entirely.
-  # Measured on `scripts/repair_ocr.py` -- named directly, `ruff format` wants
-  # to reformat it and `ruff check` reports 11 errors; with `--force-exclude`,
-  # neither sees it. The `exclude:` below does the same job one layer earlier,
-  # so ruff is never even invoked on those paths; the redundancy is deliberate,
-  # because the two lists can be edited independently and only one of them is
-  # load-bearing if the other is wrong.
+  # `--force-exclude` closes a trap #48 documented: pyproject's
+  # `extend-exclude` is only honoured for *discovered* paths, so a hook
+  # handing ruff a staged filename directly bypasses the repo's scoping. The
+  # `exclude:` below does the same job one layer earlier so ruff is never even
+  # invoked on those paths; keeping both is deliberate since either can be
+  # wrong on its own.
   - repo: local
     hooks:
       - id: ruff-check
