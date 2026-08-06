@@ -54,5 +54,8 @@ def provenance_rows() -> list[dict[str, str]]:
 def mixed_provenance_rows() -> list[dict[str, str]]:
     """A provenance sidecar that still has an `ocr` range. See its README."""
     return read_tsv(
-        Path(__file__).resolve().parent / "fixtures" / "provenance-mixed"
-        / "corpus.provenance.tsv")
+        Path(__file__).resolve().parent
+        / "fixtures"
+        / "provenance-mixed"
+        / "corpus.provenance.tsv"
+    )

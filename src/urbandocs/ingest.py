@@ -32,12 +32,12 @@ import sys
 import unicodedata
 from collections import defaultdict
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypedDict
 
 from urbandocs import paths
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Mapping, Sequence
 
 # Names for the three shapes this module passes around. They exist because ty is
 # configured with `missing-type-argument = "error"` (#48): a bare `dict` resolves
@@ -53,11 +53,35 @@ Node = dict[str, Any]
 #: A bounding box in docling's BOTTOMLEFT coordinates: `l`, `r`, `t`, `b`.
 Box = dict[str, float]
 
-#: One corpus record, keyed by `COLUMNS`. Values are mixed -- `page` is an int,
-#: the rest are strings -- and `write_tsv` stringifies on the way out, so the
-#: value type is deliberately `object` rather than a union that would have to be
-#: widened again at the first non-string column.
-Row = dict[str, object]
+
+class Row(TypedDict):
+    """One corpus record, keyed by `COLUMNS`.
+
+    A TypedDict rather than a `dict[str, object]`: the values are genuinely
+    mixed -- `page` is an int and the rest are strings -- and the loose spelling
+    types every read as `object`, so a consumer doing `"m²" in r["text"]` has to
+    cast before it can do anything. Naming the fields keeps reads precise on both
+    sides, which is the whole point of the type gate.
+    """
+
+    id: str
+    doc: str
+    page: int
+    cite: str
+    parent_id: str
+    label: str
+    text: str
+    norm: str
+
+
+class ProvRow(TypedDict):
+    """One row of `corpus.provenance.tsv`: a page range and how it was extracted."""
+
+    doc: str
+    page_from: int
+    page_to: int
+    source: str
+
 
 DOCS = ["DccSUA", "DOG_2025", "dog-habitabilidad"]
 
@@ -740,7 +764,9 @@ def row(
     }
 
 
-def write_tsv(path: Path, columns: list[str], rows: list[Row]) -> None:
+def write_tsv(
+    path: Path, columns: list[str], rows: Sequence[Mapping[str, object]]
+) -> None:
     """Plain TSV -- no quoting, no escaping, so `awk -F'\\t'` and `cut` just work.
 
     The substrate is read by line-oriented shell tools (#33), which do not
@@ -788,7 +814,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     rows: list[Row] = []
     stats: defaultdict[str, int] = defaultdict(int)
-    prov_rows: list[Row] = []
+    prov_rows: list[ProvRow] = []
     for doc in args.docs:
         before = len(rows)
         ingest_doc(doc, rows, stats, tuned=tuned)
