@@ -69,12 +69,16 @@ def build(tuned: Path) -> tuple[list[ingest.Row], list[ingest.ProvRow]]:
     for doc in PAGES:
         ingest.ingest_doc(doc, rows, stats, tuned=tuned)
 
+    # Rows carry the doc key, not the filename (#57), so PAGES -- keyed by
+    # filename, for readability -- needs the same translation to match them.
+    pages_by_code = {ingest.doc_code(doc): pages for doc, pages in PAGES.items()}
+
     by_id = {r["id"]: r for r in rows}
     order = {r["id"]: i for i, r in enumerate(rows)}
 
     keep: set[str] = set()
     for r in rows:
-        if int(r["page"]) in PAGES.get(r["doc"], {}):
+        if int(r["page"]) in pages_by_code.get(r["doc"], {}):
             keep.add(r["id"])
 
     # Ancestor closure: a chain that dead-ends at a parent_id the fixture does not
@@ -94,6 +98,7 @@ def build(tuned: Path) -> tuple[list[ingest.Row], list[ingest.ProvRow]]:
     # page falls in, and a clipped range would make that lookup trivially true.
     prov: list[ingest.ProvRow] = []
     for doc in PAGES:
+        code = ingest.doc_code(doc)
         n_pages = len(json.loads((tuned / f"{doc}.json").read_text())["pages"])
         ocr = ingest.load_provenance(doc, tuned=tuned)
         if ocr:
@@ -102,18 +107,20 @@ def build(tuned: Path) -> tuple[list[ingest.Row], list[ingest.ProvRow]]:
                 if cursor < a:
                     prov.append(
                         {
-                            "doc": doc,
+                            "doc": code,
                             "page_from": cursor,
                             "page_to": a - 1,
                             "source": "native",
                         }
                     )
-                prov.append({"doc": doc, "page_from": a, "page_to": b, "source": "ocr"})
+                prov.append(
+                    {"doc": code, "page_from": a, "page_to": b, "source": "ocr"}
+                )
                 cursor = b + 1
             if cursor <= n_pages:
                 prov.append(
                     {
-                        "doc": doc,
+                        "doc": code,
                         "page_from": cursor,
                         "page_to": n_pages,
                         "source": "native",
@@ -121,7 +128,7 @@ def build(tuned: Path) -> tuple[list[ingest.Row], list[ingest.ProvRow]]:
                 )
         else:
             prov.append(
-                {"doc": doc, "page_from": 1, "page_to": n_pages, "source": "native"}
+                {"doc": code, "page_from": 1, "page_to": n_pages, "source": "native"}
             )
     prov.sort(key=lambda r: (r["doc"], r["page_from"]))
     return kept, prov
@@ -186,10 +193,14 @@ def render(rows, prov) -> dict[str, str]:
             )
         return buf.getvalue()
 
+    # Rows carry the doc key (#57); PAGES is keyed by filename for readability,
+    # so translate once here too.
+    pages_by_code = {ingest.doc_code(doc): pages for doc, pages in PAGES.items()}
+
     cov = coverage(rows)
     ancestor_only = defaultdict(set)
     for r in rows:
-        if int(r["page"]) not in PAGES[r["doc"]]:
+        if int(r["page"]) not in pages_by_code[r["doc"]]:
             ancestor_only[r["doc"]].add(int(r["page"]))
 
     lines = [
@@ -208,8 +219,9 @@ def render(rows, prov) -> dict[str, str]:
         "",
     ]
     for doc, pages in PAGES.items():
+        code = ingest.doc_code(doc)
         for page, why in sorted(pages.items()):
-            n = sum(1 for r in rows if r["doc"] == doc and int(r["page"]) == page)
+            n = sum(1 for r in rows if r["doc"] == code and int(r["page"]) == page)
             lines.append(f"- `{doc}` p.{page} ({n} records) -- {why}")
     lines += [
         "",

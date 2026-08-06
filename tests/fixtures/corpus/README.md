@@ -24,8 +24,8 @@ record the real corpus holds on them.
 Pulled in only to complete an ancestor chain. `get_page` on these returns
 less than the real corpus would; do not assert page completeness here.
 
-- `DccSUA`: pp. 31, 74
-- `dog-habitabilidad`: pp. 21, 23, 24, 31
+- `D128`: pp. 21, 23, 24, 31
+- `SUA`: pp. 31, 74
 
 ## Shapes carried
 

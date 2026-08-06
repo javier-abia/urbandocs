@@ -31,7 +31,9 @@ from urbandocs import paths
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-DECREE = "dog-habitabilidad"
+# Doc key, not filename: `doc` carries the key ingest mints into ids (#57), so
+# this must match `DOC_CODES["dog-habitabilidad"]` in ingest.py, not the stem.
+DECREE = "D128"
 
 # The OCR'd corpus this replaced held zero of every one of these across pp.1-95
 # (#39). They are the reason the swap was taken.

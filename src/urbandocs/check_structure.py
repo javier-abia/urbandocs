@@ -35,7 +35,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from urbandocs import paths
-from urbandocs.ingest import COLUMNS, DOCS, normalize
+from urbandocs.ingest import COLUMNS, DOCS, doc_code, normalize
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -187,10 +187,12 @@ def check(rows: list[Row], prov: list[ProvRow]) -> list[str]:
     else:
         ok("text empty iff picture")
 
-    # roster: the set of `doc` values equals `ingest.DOCS` (#47, decision 2)
+    # roster: the set of `doc` values equals the doc keys of `ingest.DOCS` (#47,
+    # decision 2; #57 made `doc` carry the key, not the filename)
     present = {r["doc"] for r in rows}
-    if present != set(DOCS):
-        fail("doc roster", f"got {sorted(present)}, want {sorted(DOCS)}")
+    want = {doc_code(d) for d in DOCS}
+    if present != want:
+        fail("doc roster", f"got {sorted(present)}, want {sorted(want)}")
     else:
         ok("doc roster")
 
