@@ -20,8 +20,8 @@ them:
 
 | was | is |
 | --- | --- |
-| `scripts/ingest.py` | `python -m urbandocs.ingest` |
-| `scripts/check_corpus.py` | `python -m urbandocs.check_corpus` |
+| `scripts/ingest.py` | `uv run -m urbandocs.ingest` |
+| `scripts/check_corpus.py` | `uv run -m urbandocs.check_corpus` |
 
 Stage 2 rebuilds `corpus/corpus.tsv`; the gate asserts the bands over it. Both
 run on a clean checkout with no third-party dependencies.
