@@ -1,0 +1,103 @@
+# CI (#52, map #45): real content from day one, not a green checkmark over an
+# empty suite.
+#
+# Two jobs, deliberately separate (decided on map #45 before this file):
+# `gates` runs on every commit and only ever gets slower as the engine grows;
+# `corpus-invariants` reads committed inputs that change rarely and is a ~2s
+# early exit. Folding them together would make the fast, stable check ride
+# along with the slow, growing one.
+#
+# Both jobs always run, on every push and pull request -- no `paths:` filter.
+# GitHub's required-status-checks gate treats a job a path filter skipped as
+# permanently pending, not as passed, which would block every PR that
+# doesn't happen to touch `scripts/ingest.py` or `docling-tuned/`. The job
+# itself is the early exit; a workflow-level filter buys nothing here.
+#
+# Single runner, single Python: `requires-python = ">=3.14"` names one deploy
+# target, so a version matrix would test portability nobody needs. `uv sync`
+# resolves that same floor and downloads the interpreter itself -- no
+# `actions/setup-python` needed alongside `astral-sh/setup-uv`.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  gates:
+    name: gates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      # `--locked` rather than `--frozen`: CI should fail loudly if `uv.lock`
+      # has drifted from `pyproject.toml`, not silently install a stale lock.
+      - run: uv sync --locked
+
+      # `setup-uv`'s cache is `uv`'s own package cache; `detect-secrets` and
+      # the `pre-commit-hooks` repo build their own venvs under
+      # `~/.cache/pre-commit`, keyed here off the config that pins their
+      # revisions -- a version bump invalidates the cache by construction.
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
+
+      # The single lint/format/hygiene command (#50): same six hooks a clone
+      # runs at commit time, over every file rather than only staged ones, so
+      # CI is the backstop for anyone who skipped `pre-commit install`.
+      - name: pre-commit (lint, format, hygiene, secrets)
+        run: uv run pre-commit run --all-files
+
+      - name: ty
+        run: uv run ty check
+
+      - name: pytest
+        run: uv run pytest
+
+  corpus-invariants:
+    name: corpus-invariants
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - run: uv sync --locked
+
+      # Determinism (#47, invariant 13): two independent rebuilds from the
+      # same committed inputs must be byte-identical. `corpus/` itself is
+      # gitignored and derived, so there is nothing checked in to diff
+      # against -- the job rebuilds twice and diffs against itself.
+      - name: rebuild twice
+        run: |
+          uv run -m urbandocs.ingest --out /tmp/corpus-a/corpus.tsv --stats
+          uv run -m urbandocs.ingest --out /tmp/corpus-b/corpus.tsv --stats
+
+      - name: assert deterministic
+        run: |
+          diff /tmp/corpus-a/corpus.tsv /tmp/corpus-b/corpus.tsv
+          diff /tmp/corpus-a/corpus.provenance.tsv /tmp/corpus-b/corpus.provenance.tsv
+
+      # Structure is invariant (#47): every one of these held exactly across
+      # #41's document swap, while every count moved. No count, bound, or
+      # label allowlist is asserted here or below -- see check_structure.py
+      # and check_corpus.py for why.
+      - name: check_structure
+        run: uv run -m urbandocs.check_structure --corpus /tmp/corpus-a/corpus.tsv
+
+      # The existing hand-measured bands (#41/#39): document-specific, and
+      # expected to go red on the next decree swap -- kept in its own job
+      # step so that window never masks a structural regression.
+      - name: check_corpus
+        run: uv run -m urbandocs.check_corpus --corpus /tmp/corpus-a/corpus.tsv
