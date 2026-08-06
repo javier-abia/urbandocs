@@ -20,6 +20,8 @@ Usage:
     python -m urbandocs.ingest --out /tmp/c.tsv --stats
 """
 
+#TODO: Create a plan on how to facilitate the modification of the script on new versions of docling output
+
 from __future__ import annotations
 
 import argparse
