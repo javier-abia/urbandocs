@@ -11,11 +11,16 @@ wheels/
 
 # Derived, rebuilt in seconds by `python -m urbandocs.ingest` from the committed
 # tuned JSON.
-corpus/
+#
+# Anchored with a leading slash. Unanchored, `corpus/` matches at *every* depth,
+# which silently swallowed `tests/fixtures/corpus/` -- the committed fixture #49
+# exists to provide. Both of these name one specific directory at the repo root,
+# so both say so.
+/corpus/
 
 # The two-level navigable index, deleted at every tier by #32. The builder and
 # the routing evaluation stay in scripts/ as the evidence for that decision.
-index/
+/index/
 
 # Normativa corpus: source PDFs plus their pdftotext conversions (~20M). Kept out
 # of the repo; docs/research/ cites paths under here, so obtain the PDFs and
