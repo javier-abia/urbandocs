@@ -48,8 +48,9 @@ def test_every_row_has_exactly_the_column_count(fixture_dir):
     with (fixture_dir / "corpus.tsv").open() as fh:
         for n, line in enumerate(fh, start=1):
             assert line.endswith("\n"), f"line {n} has no terminator"
-            assert len(line.rstrip("\n").split("\t")) == len(ingest.COLUMNS), \
+            assert len(line.rstrip("\n").split("\t")) == len(ingest.COLUMNS), (
                 f"line {n} is ragged"
+            )
 
 
 def test_no_field_contains_a_tab_or_newline(corpus_rows):
@@ -58,8 +59,9 @@ def test_no_field_contains_a_tab_or_newline(corpus_rows):
             assert "\t" not in value and "\r" not in value, f"{r['id']}.{column}"
 
 
-def test_quote_records_are_present_and_the_quoting_hazard_is_latent(fixture_dir,
-                                                                    corpus_rows):
+def test_quote_records_are_present_and_the_quoting_hazard_is_latent(
+    fixture_dir, corpus_rows
+):
     """`"` in a record is a *latent* hazard, not a live defect. Measured, not assumed.
 
     `write_tsv` emits no quoting and no escaping so that `cut` and `awk -F'\\t'`
@@ -85,12 +87,14 @@ def test_quote_records_are_present_and_the_quoting_hazard_is_latent(fixture_dir,
     assert all(len(row) == len(ingest.COLUMNS) for row in correct)
     assert correct == default, (
         "a field now starts with a quote -- the substrate has no escaping, so "
-        "csv.QUOTE_NONE is the only correct reader (#33)")
+        "csv.QUOTE_NONE is the only correct reader (#33)"
+    )
 
 
 # --------------------------------------------------------------------------- #
 # integrity: what a consumer is allowed to assume
 # --------------------------------------------------------------------------- #
+
 
 def test_ids_are_unique(corpus_rows):
     ids = [r["id"] for r in corpus_rows]
@@ -137,11 +141,14 @@ def test_id_prefix_matches_the_documents_code(corpus_rows):
 def test_every_records_page_falls_in_a_provenance_range(corpus_rows, provenance_rows):
     """#27 derives fidelity from `doc` + `page`, so a page outside every range has
     no answer at all -- worse than a wrong one, because nothing is disclosed."""
-    ranges = [(p["doc"], int(p["page_from"]), int(p["page_to"]), p["source"])
-              for p in provenance_rows]
+    ranges = [
+        (p["doc"], int(p["page_from"]), int(p["page_to"]), p["source"])
+        for p in provenance_rows
+    ]
     for r in corpus_rows:
-        hits = [s for doc, a, b, s in ranges
-                if doc == r["doc"] and a <= int(r["page"]) <= b]
+        hits = [
+            s for doc, a, b, s in ranges if doc == r["doc"] and a <= int(r["page"]) <= b
+        ]
         assert len(hits) == 1, f"{r['id']} matched {len(hits)} ranges"
 
 
@@ -159,6 +166,7 @@ def test_norm_is_what_normalize_produces(corpus_rows):
 # --------------------------------------------------------------------------- #
 # coverage: the shapes #49 requires, asserted on the artifact
 # --------------------------------------------------------------------------- #
+
 
 def test_covers_at_least_two_documents(corpus_rows):
     assert len({r["doc"] for r in corpus_rows}) >= 2
@@ -221,8 +229,10 @@ def test_has_a_record_whose_parent_is_on_an_earlier_page(corpus_rows):
     a single `prov` entry -- so what crosses the boundary is the chain: a provision
     on p.76 hanging off a heading on p.74. `get` must climb across it."""
     by_id = {r["id"]: r for r in corpus_rows}
-    assert any(r["parent_id"] and by_id[r["parent_id"]]["page"] != r["page"]
-               for r in corpus_rows)
+    assert any(
+        r["parent_id"] and by_id[r["parent_id"]]["page"] != r["page"]
+        for r in corpus_rows
+    )
 
 
 def test_unit_spellings_fold_together_in_norm(corpus_rows):
@@ -238,8 +248,9 @@ def test_unit_spellings_fold_together_in_norm(corpus_rows):
     assert ingest.normalize("30 m²") == ingest.normalize("30 m 2") == "30 m2"
 
 
-def test_provenance_covers_both_fidelities_across_the_fixtures(provenance_rows,
-                                                               mixed_provenance_rows):
+def test_provenance_covers_both_fidelities_across_the_fixtures(
+    provenance_rows, mixed_provenance_rows
+):
     """The real corpus is all-native since #41, so the `ocr` branch of #27's
     disclosure is only reachable through the hand-written sidecar. Asserted
     together so deleting that fixture fails here rather than silently halving the

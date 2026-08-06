@@ -24,8 +24,12 @@ import csv
 import re
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from urbandocs import paths
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 DECREE = "dog-habitabilidad"
 
@@ -56,12 +60,18 @@ PHANTOMS = [
 FURNITURE = ["ISSN", "CVE-DOG", "Depósito legal", "DOG Núm"]
 
 
-def main(argv=None):
-    ap = argparse.ArgumentParser(prog="uv run -m urbandocs.check_corpus",
-                                 description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--root", type=Path, default=None,
-                    help="repo root; defaults to $URBANDOCS_ROOT or the enclosing repo")
+def main(argv: Sequence[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(
+        prog="uv run -m urbandocs.check_corpus",
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    ap.add_argument(
+        "--root",
+        type=Path,
+        default=None,
+        help="repo root; defaults to $URBANDOCS_ROOT or the enclosing repo",
+    )
     ap.add_argument("--corpus", type=Path, default=None)
     args = ap.parse_args(argv)
     corpus = args.corpus or paths.corpus_tsv(args.root)
@@ -75,9 +85,9 @@ def main(argv=None):
         sys.exit(f"no {DECREE} records in {corpus}")
     text = " ".join(r["text"] for r in decree)
 
-    failures = []
+    failures: list[str] = []
 
-    def band(name, got, want):
+    def band(name: str, got: int, want: int) -> None:
         ok = got >= want
         print(f"  [{'PASS' if ok else 'FAIL'}] {name}: {got} (want >= {want})")
         if not ok:
@@ -93,7 +103,8 @@ def main(argv=None):
     print("\nangle thresholds")
     found = collections.Counter(
         re.sub(r"^[±<>≥≤]", "", m.replace(" ", ""))
-        for m in re.findall(r"[±<>≥≤]?\s*\d+\s*[º°]", text))
+        for m in re.findall(r"[±<>≥≤]?\s*\d+\s*[º°]", text)
+    )
     for angle, want in ANGLE_BANDS.items():
         band(angle, found.get(angle, 0), want)
 
@@ -117,12 +128,15 @@ def main(argv=None):
         failures.append("Pág. records")
 
     print("\nprovenance (every range native -- the OCR programme is retired)")
-    prov = list(csv.DictReader(
-        corpus.with_name("corpus.provenance.tsv").open(), delimiter="\t"))
+    prov = list(
+        csv.DictReader(corpus.with_name("corpus.provenance.tsv").open(), delimiter="\t")
+    )
     for r in prov:
         ok = r["source"] == "native"
-        print(f"  [{'PASS' if ok else 'FAIL'}] {r['doc']} pp.{r['page_from']}-"
-              f"{r['page_to']}: {r['source']}")
+        print(
+            f"  [{'PASS' if ok else 'FAIL'}] {r['doc']} pp.{r['page_from']}-"
+            f"{r['page_to']}: {r['source']}"
+        )
         if not ok:
             failures.append(f"provenance {r['doc']}")
 
@@ -132,7 +146,9 @@ def main(argv=None):
         if "60º" not in r["text"]:
             continue
         chain, cur, seen = [], r, set()
-        while cur["parent_id"] and cur["parent_id"] in by and cur["parent_id"] not in seen:
+        while (
+            cur["parent_id"] and cur["parent_id"] in by and cur["parent_id"] not in seen
+        ):
             seen.add(cur["parent_id"])
             cur = by[cur["parent_id"]]
             chain.append(cur["cite"] or cur["text"][:24])

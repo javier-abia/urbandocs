@@ -47,7 +47,7 @@ OUT_DIR = HERE / "corpus"
 # coverage assertion below still passes.
 PAGES: dict[str, dict[int, str]] = {
     "DccSUA": {
-        32: "records containing a `\"` -- the ones a default csv.reader corrupts",
+        32: 'records containing a `"` -- the ones a default csv.reader corrupts',
         75: "tables, captions, a footnote, dotted `B.n.n` cites",
         76: "the corpus's deepest ancestor chain (7), a formula, a second table",
     },
@@ -62,10 +62,10 @@ PAGES: dict[str, dict[int, str]] = {
 }
 
 
-def build(tuned: Path) -> tuple[list[dict], list[dict]]:
+def build(tuned: Path) -> tuple[list[ingest.Row], list[ingest.ProvRow]]:
     """Ingest the real documents, then keep the selected pages + ancestor closure."""
-    rows: list[dict] = []
-    stats: dict = defaultdict(int)
+    rows: list[ingest.Row] = []
+    stats: defaultdict[str, int] = defaultdict(int)
     for doc in PAGES:
         ingest.ingest_doc(doc, rows, stats, tuned=tuned)
 
@@ -92,7 +92,7 @@ def build(tuned: Path) -> tuple[list[dict], list[dict]]:
     # Provenance is copied verbatim for the included documents rather than clipped
     # to the kept pages: #27 derives a record's fidelity by finding the range its
     # page falls in, and a clipped range would make that lookup trivially true.
-    prov: list[dict] = []
+    prov: list[ingest.ProvRow] = []
     for doc in PAGES:
         n_pages = len(json.loads((tuned / f"{doc}.json").read_text())["pages"])
         ocr = ingest.load_provenance(doc, tuned=tuned)
@@ -100,23 +100,36 @@ def build(tuned: Path) -> tuple[list[dict], list[dict]]:
             cursor = 1
             for a, b, _ in sorted(ocr):
                 if cursor < a:
-                    prov.append({"doc": doc, "page_from": cursor, "page_to": a - 1,
-                                 "source": "native"})
+                    prov.append(
+                        {
+                            "doc": doc,
+                            "page_from": cursor,
+                            "page_to": a - 1,
+                            "source": "native",
+                        }
+                    )
                 prov.append({"doc": doc, "page_from": a, "page_to": b, "source": "ocr"})
                 cursor = b + 1
             if cursor <= n_pages:
-                prov.append({"doc": doc, "page_from": cursor, "page_to": n_pages,
-                             "source": "native"})
+                prov.append(
+                    {
+                        "doc": doc,
+                        "page_from": cursor,
+                        "page_to": n_pages,
+                        "source": "native",
+                    }
+                )
         else:
-            prov.append({"doc": doc, "page_from": 1, "page_to": n_pages,
-                         "source": "native"})
+            prov.append(
+                {"doc": doc, "page_from": 1, "page_to": n_pages, "source": "native"}
+            )
     prov.sort(key=lambda r: (r["doc"], r["page_from"]))
     return kept, prov
 
 
 # The shapes #49 requires the fixture to carry. Asserted on every build, so a page
 # swap that silently drops one fails here rather than in a test six months later.
-def coverage(rows: list[dict]) -> dict[str, int]:
+def coverage(rows: list[ingest.Row]) -> dict[str, int]:
     by_id = {r["id"]: r for r in rows}
 
     def depth(r):
@@ -144,23 +157,33 @@ def coverage(rows: list[dict]) -> dict[str, int]:
         "formula": sum(1 for r in rows if r["label"] == "formula"),
         "footnote": sum(1 for r in rows if r["label"] == "footnote"),
         "m² in text folded to m2 in norm": sum(
-            1 for r in rows if "m²" in r["text"] and "m2" in r["norm"]),
+            1 for r in rows if "m²" in r["text"] and "m2" in r["norm"]
+        ),
         "parent on an earlier page": sum(
-            1 for r in rows
-            if r["parent_id"] in by_id and by_id[r["parent_id"]]["page"] != r["page"]),
+            1
+            for r in rows
+            if r["parent_id"] in by_id and by_id[r["parent_id"]]["page"] != r["page"]
+        ),
     }
 
 
 def render(rows, prov) -> dict[str, str]:
-    """The three files the fixture is, as text, so `--check` can diff without writing."""
+    """The three files the fixture is, as text, so `--check` diffs without writing."""
 
     def tsv(columns, records):
         buf = io.StringIO()
         buf.write("\t".join(columns) + "\n")
         for r in records:
-            buf.write("\t".join(
-                str(r.get(c, "")).replace("\t", " ").replace("\n", " ").replace("\r", " ")
-                for c in columns) + "\n")
+            buf.write(
+                "\t".join(
+                    str(r.get(c, ""))
+                    .replace("\t", " ")
+                    .replace("\n", " ")
+                    .replace("\r", " ")
+                    for c in columns
+                )
+                + "\n"
+            )
         return buf.getvalue()
 
     cov = coverage(rows)
@@ -211,11 +234,15 @@ def render(rows, prov) -> dict[str, str]:
 
 
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("--root", type=Path, default=None)
-    ap.add_argument("--check", action="store_true",
-                    help="fail if the committed fixture is not what this would write")
+    ap.add_argument(
+        "--check",
+        action="store_true",
+        help="fail if the committed fixture is not what this would write",
+    )
     args = ap.parse_args(argv)
 
     tuned = paths.tuned_dir(args.root)
@@ -236,9 +263,11 @@ def main(argv=None) -> int:
             if not path.exists() or path.read_text() != want:
                 bad.append(name)
         if bad:
-            print(f"fixture is stale: {', '.join(bad)}\n"
-                  f"run `uv run python {Path(__file__).name}` and commit the result",
-                  file=sys.stderr)
+            print(
+                f"fixture is stale: {', '.join(bad)}\n"
+                f"run `uv run python {Path(__file__).name}` and commit the result",
+                file=sys.stderr,
+            )
             return 1
         print(f"fixture up to date: {len(rows)} records")
         return 0

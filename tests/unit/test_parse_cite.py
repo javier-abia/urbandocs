@@ -26,6 +26,7 @@ def test_namespace_headings_carry_a_rank():
 def test_articulo_nests_inside_seccion():
     _, _, seccion = parse_cite("Sección SUA 1")
     _, _, articulo = parse_cite("Artículo 14")
+    assert seccion is not None and articulo is not None, "both are namespaces"
     assert articulo > seccion, "Artículo must nest inside Sección"
 
 
