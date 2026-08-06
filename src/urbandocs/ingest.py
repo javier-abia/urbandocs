@@ -16,8 +16,8 @@ answering layer can derive per-record fidelity from `doc` + `page` + `label`
 without any record storing it (#27).
 
 Usage:
-    python -m urbandocs.ingest                     # writes corpus/corpus.tsv
-    python -m urbandocs.ingest --out /tmp/c.tsv --stats
+    uv run -m urbandocs.ingest                     # writes corpus/corpus.tsv
+    uv run -m urbandocs.ingest --out /tmp/c.tsv --stats
 """
 
 from __future__ import annotations
@@ -672,7 +672,8 @@ def write_tsv(path: Path, columns: list[str], rows: list[dict]) -> None:
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(description=__doc__,
+    ap = argparse.ArgumentParser(prog="uv run -m urbandocs.ingest",
+                                 description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--root", type=Path, default=None,
                     help="repo root; defaults to $URBANDOCS_ROOT or the enclosing repo")

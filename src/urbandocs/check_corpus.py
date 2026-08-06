@@ -12,8 +12,8 @@ in tables, so a check that reads only body text would pass on a corpus whose
 tables had been dropped.
 
 Usage:
-    python -m urbandocs.check_corpus
-    python -m urbandocs.check_corpus --corpus /tmp/corpus.tsv
+    uv run -m urbandocs.check_corpus
+    uv run -m urbandocs.check_corpus --corpus /tmp/corpus.tsv
 """
 
 from __future__ import annotations
@@ -57,7 +57,8 @@ FURNITURE = ["ISSN", "CVE-DOG", "Depósito legal", "DOG Núm"]
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(description=__doc__,
+    ap = argparse.ArgumentParser(prog="uv run -m urbandocs.check_corpus",
+                                 description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--root", type=Path, default=None,
                     help="repo root; defaults to $URBANDOCS_ROOT or the enclosing repo")
@@ -66,7 +67,7 @@ def main(argv=None):
     corpus = args.corpus or paths.corpus_tsv(args.root)
 
     if not corpus.exists():
-        sys.exit(f"missing {corpus}; run `python -m urbandocs.ingest` first")
+        sys.exit(f"missing {corpus}; run `uv run -m urbandocs.ingest` first")
 
     rows = list(csv.DictReader(corpus.open(), delimiter="\t"))
     decree = [r for r in rows if r["doc"] == DECREE]

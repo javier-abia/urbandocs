@@ -6,6 +6,6 @@ what `search`/`get`/`get_by_cite`/`get_page` must do is decided on
 module structure belongs to whoever builds them (#46). What is here is the
 pipeline that produces the substrate they will read:
 
-    python -m urbandocs.ingest         # tuned docling JSON -> corpus/corpus.tsv
-    python -m urbandocs.check_corpus   # acceptance gate over that corpus
+    uv run -m urbandocs.ingest         # tuned docling JSON -> corpus/corpus.tsv
+    uv run -m urbandocs.check_corpus   # acceptance gate over that corpus
 """
