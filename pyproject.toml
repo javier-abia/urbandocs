@@ -5,10 +5,14 @@ description = "Retrieval substrate over local construction-permit normativa"
 readme = "README.md"
 requires-python = ">=3.14"
 
-# Empty, and intended to stay empty. The engine is Python stdlib in-process
-# (#33): every tool this repo uses is a dev dependency, so this list staying
-# empty is itself an assertion worth noticing if it ever changes.
-dependencies = []
+# The engine's first runtime dependency (#59). Everything up to the MCP
+# server was Python stdlib in-process (#33), which is what kept this list
+# empty; #43 accepted the official `mcp` SDK's dependency tree -- 2.0's
+# `MCPServer`, `run(transport="streamable-http")` -- over a hand-rolled
+# stdlib server, measured and recorded there rather than assumed here.
+dependencies = [
+    "mcp>=2.0.0",
+]
 
 # The whole toolchain (#48). `uv sync` installs this group by default, so one
 # command gets a contributor or an agent session to a state where every gate
