@@ -45,19 +45,6 @@ def substrate(fixture_dir):
 
 
 @pytest.mark.anyio
-async def test_search_is_listed_with_a_non_empty_description(substrate):
-    server = build_server(substrate)
-    async with (
-        InMemoryTransport(server) as (read, write),
-        ClientSession(read, write) as session,
-    ):
-        await session.initialize()
-        tools = await session.list_tools()
-        tool = next(t for t in tools.tools if t.name == "search")
-        assert tool.description and tool.description.strip()
-
-
-@pytest.mark.anyio
 async def test_all_four_tools_are_listed_with_non_empty_descriptions(substrate):
     """The corpus-wide sweep is structural, but everything past it -- rank,
     get, expand, the single refine round, the no-ruling contract -- is
@@ -72,22 +59,12 @@ async def test_all_four_tools_are_listed_with_non_empty_descriptions(substrate):
         tools = await session.list_tools()
 
     by_name = {t.name: t.description for t in tools.tools}
-    assert set(by_name) == {"search", "get", "get_by_cite", "get_page"}
-    for name, description in by_name.items():
-        assert description and description.strip(), name
-
-
-@pytest.mark.anyio
-async def test_get_is_listed_with_a_non_empty_description(substrate):
-    server = build_server(substrate)
-    async with (
-        InMemoryTransport(server) as (read, write),
-        ClientSession(read, write) as session,
-    ):
-        await session.initialize()
-        tools = await session.list_tools()
-        get_tool = next(t for t in tools.tools if t.name == "get")
-        assert get_tool.description and get_tool.description.strip()
+    assert by_name == {
+        "search": SEARCH_DESCRIPTION,
+        "get": GET_DESCRIPTION,
+        "get_by_cite": GET_BY_CITE_DESCRIPTION,
+        "get_page": GET_PAGE_DESCRIPTION,
+    }
 
 
 @pytest.mark.anyio
@@ -107,19 +84,6 @@ async def test_get_over_the_wire_returns_the_same_records_as_the_function(substr
         "records": [asdict(r) for r in want.records],
         "unknown_ids": want.unknown_ids,
     }
-
-
-@pytest.mark.anyio
-async def test_get_by_cite_is_listed_with_a_non_empty_description(substrate):
-    server = build_server(substrate)
-    async with (
-        InMemoryTransport(server) as (read, write),
-        ClientSession(read, write) as session,
-    ):
-        await session.initialize()
-        tools = await session.list_tools()
-        tool = next(t for t in tools.tools if t.name == "get_by_cite")
-        assert tool.description and tool.description.strip()
 
 
 @pytest.mark.anyio
@@ -152,19 +116,6 @@ async def test_get_by_cite_over_the_wire_honours_the_doc_filter(substrate):
         result = await session.call_tool("get_by_cite", {"cite": "B.1", "doc": "D128"})
 
     assert result.structured_content == {"result": [asdict(c) for c in want]}
-
-
-@pytest.mark.anyio
-async def test_get_page_is_listed_with_a_non_empty_description(substrate):
-    server = build_server(substrate)
-    async with (
-        InMemoryTransport(server) as (read, write),
-        ClientSession(read, write) as session,
-    ):
-        await session.initialize()
-        tools = await session.list_tools()
-        tool = next(t for t in tools.tools if t.name == "get_page")
-        assert tool.description and tool.description.strip()
 
 
 @pytest.mark.anyio
@@ -210,6 +161,8 @@ def test_search_description_states_the_term_floor_and_stems():
     assert "own term" in SEARCH_DESCRIPTION
     assert "stem" in SEARCH_DESCRIPTION
     assert '"anch"' in SEARCH_DESCRIPTION
+    assert "Synonyms may be added" in SEARCH_DESCRIPTION
+    assert "may never be dropped" in SEARCH_DESCRIPTION
 
 
 def test_search_description_states_the_loop_order_and_single_refine_round():
