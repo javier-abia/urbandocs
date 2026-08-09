@@ -55,16 +55,11 @@ class RankedSection:
 def _term_pattern(term: str) -> re.Pattern[str]:
     """Compile one search term into a word-boundary literal-prefix pattern.
 
-    `normalize` is the exact function that produced the `norm` column (its own
-    docstring says so: "Query-side normalization must call this same function,
-    or the two sides stop agreeing"), so a term matches regardless of the
-    case or accents it arrived in.
-
-    `re.escape` runs on the *normalized* term, after folding, so an
-    agent-generated term is always read as a literal -- `*altura` does not
-    silently degrade to `altura` (it would otherwise be `\\b*altura`, a `*`
-    with nothing to repeat, a compile-time crash) and `Ley 5/2010` is a search
-    rather than a `re.error` (#56).
+    Runs through `normalize` first, so a term matches regardless of case or
+    accents -- query and corpus must normalize the same way, or the two
+    sides disagree. `re.escape` runs after that, so `*altura` searches
+    literally instead of crashing, and `Ley 5/2010` is a search rather than
+    a `re.error` (#56).
     """
     return re.compile(r"\b" + re.escape(normalize(term)))
 

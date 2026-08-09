@@ -87,6 +87,31 @@ Two things that will otherwise surprise you:
 To bypass everything in an emergency: `git commit --no-verify`. CI will still
 catch it.
 
+## Code comments
+
+Keep inline comments short: state the current behavior/contract and, if it's
+not obvious, a one-line why, with an issue ref where one exists. A comment
+should read in a few seconds, not as a paragraph.
+
+Measured counts, worked examples, and rejected alternatives are real
+signal, but they belong in the commit message or PR description, not baked
+into the source — git history is where "why we didn't do X" and "we
+measured N sites" should live, not a comment block above a regex.
+
+```python
+# Bad: narrates the investigation
+# The Diario Oficial sets two justified columns and breaks words across
+# lines. docling rejoins them but keeps the hyphen... [20 more lines,
+# corpus counts, a worked example table, a rejected alternative]
+DASH_PAIR_WINDOW = 200
+
+# Good: states the contract and the one-line why
+# Line-break hyphens must be rejoined; parenthetical dashes must not be.
+# Discriminator: parenthetical dashes pair (open + close), line-break
+# hyphens never close (#32, #41).
+DASH_PAIR_WINDOW = 200
+```
+
 ## Commit & PR conventions
 
 - Use [Conventional Commits](https://www.conventionalcommits.org/) for all commit messages (`feat:`, `fix:`, `docs:`, `chore:`, `refactor:`, etc.).

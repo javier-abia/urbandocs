@@ -39,15 +39,11 @@ from urbandocs import paths
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
-# Names for the three shapes this module passes around. They exist because ty is
-# configured with `missing-type-argument = "error"` (#48): a bare `dict` resolves
-# its parameters to `Unknown` and quietly switches the type checker off for
-# everything downstream of it. Naming the shape is the cheap way to keep it on.
+# Named shapes instead of bare `dict`/`list`: ty treats missing-type-argument
+# as an error (#48), and a bare `dict` silently turns off checking downstream.
 
-#: A node of docling's JSON, straight off `json.loads`. `Any` is honest here --
-#: the shape is the converter's, not ours, and every read of it is a `.get()`
-#: with a default precisely because the schema is not guaranteed (see the TODO
-#: at the top of this module about docling version drift).
+#: A node of docling's JSON, straight off `json.loads`. Untyped on purpose --
+#: the schema is the converter's, not ours; reads use `.get()` with defaults.
 Node = dict[str, Any]
 
 #: A bounding box in docling's BOTTOMLEFT coordinates: `l`, `r`, `t`, `b`.
@@ -57,11 +53,8 @@ Box = dict[str, float]
 class Row(TypedDict):
     """One corpus record, keyed by `COLUMNS`.
 
-    A TypedDict rather than a `dict[str, object]`: the values are genuinely
-    mixed -- `page` is an int and the rest are strings -- and the loose spelling
-    types every read as `object`, so a consumer doing `"m²" in r["text"]` has to
-    cast before it can do anything. Naming the fields keeps reads precise on both
-    sides, which is the whole point of the type gate.
+    A TypedDict rather than `dict[str, object]`, so fields keep their real
+    types (`page` is `int`, the rest are `str`) instead of reading as `object`.
     """
 
     id: str
@@ -85,56 +78,33 @@ class ProvRow(TypedDict):
 
 DOCS = ["DccSUA", "DOG_2025", "dog-habitabilidad"]
 
-# Short code used in ids. Ids are read aloud in citations, so they are hand-set
-# rather than derived; any document not listed falls back to its first three
-# alphanumerics upper-cased.
-#
-# `dog-habitabilidad` is Decreto 128/2023 (DOG núm. 176), which replaced the
-# consolidated `HABITABILIDAD` edition outright (#39, #41). Two things ride on
-# its code being `D128`:
-#
-#   - the fallback would derive `DOG` from `doghabitabilidad`, colliding with
-#     DOG_2025 -- ids would stop being unique across the corpus;
-#   - `HAB` is deliberately left dead. The decree renumbers every page, so a
-#     stale `HAB:p20:art14.1.a` must fail to resolve rather than land on a
-#     different provision that now occupies that address.
+# Short code used in ids, hand-set because ids are read aloud in citations;
+# an unlisted doc falls back to its first three alphanumerics upper-cased.
+# `dog-habitabilidad` is pinned to `D128` rather than the derived `DOG`
+# (would collide with DOG_2025) or `HAB` (stale after Decreto 128/2023
+# renumbered every page) (#39, #41).
 DOC_CODES = {"DccSUA": "SUA", "DOG_2025": "DOG", "dog-habitabilidad": "D128"}
 
 
 def doc_code(doc: str) -> str:
-    """The short key minted into ids -- and, per #57, into the `doc` column.
-
-    Both the substrate and its provenance sidecar key on this rather than the
-    source filename, so a citation like `D128:p43:§6` and its row's `doc` field
-    name the same document instead of disagreeing (#42).
-    """
+    """The short key minted into ids and, per #57, the `doc` column -- so a
+    citation like `D128:p43:§6` agrees with its row's `doc` field (#42)."""
     return DOC_CODES.get(doc) or re.sub(r"[^A-Za-z0-9]", "", doc)[:3].upper()
 
 
 COLUMNS = ["id", "doc", "page", "cite", "parent_id", "label", "text", "norm"]
 
-# Furniture is labelled, not contained -- `furniture.children` is empty in all
-# three documents, so the filter is label-based (#14). Verified to eat no body
-# text in any document. DOG_2025's official `Pág.` markers are labelled `text`
-# and therefore survive, which is what #8 wants.
+# Label-based, not containment-based: `furniture.children` is empty in all
+# three documents (#14). DOG_2025's `Pág.` markers are labelled `text`, so
+# they survive this filter, which is what #8 wants.
 FURNITURE_LABELS = {"page_header", "page_footer"}
 
-# The one furniture residue the label filter does not catch. Both Diario Oficial
-# documents print a running `DOG Núm. NNN` masthead that docling labels `text` in
-# the `body` layer (49 pages of Decreto 128/2023, 21 of DOG_2025), so it would
-# otherwise land as a record and interleave into provision text.
-#
-# Matched on the masthead's own shape, not on `Núm.`: the same pages print
-# `Pág. 52775`, which is the official citation page and is kept deliberately
-# (#8, #14) -- a geometric filter would take the masthead and the page number
-# together, since they share a band at the top of the page.
-#
-# On 6 pages the masthead is not a standalone item at all: docling appends it to
-# the body paragraph that runs to the foot of the page, so it arrives *inside*
-# provision text (`...se simplifica la estructu ra del índice y DOG Núm. 176`).
-# Measured across the corpus it is always trailing, at the exact end of the
-# field, so it is stripped rather than matched whole -- 4 of the 6 are DOG_2025,
-# where the same defect was live and unmeasured before this document exposed it.
+# The one furniture residue the label filter misses: both Diario Oficial docs
+# print a running `DOG Núm. NNN` masthead labelled `text`, not `page_header`
+# (49 pages of Decreto 128/2023, 21 of DOG_2025). Matched on its own shape,
+# not `Núm.`, so the neighboring `Pág. NNN` page citation survives (#8, #14).
+# On 6 pages it's appended to the trailing body paragraph instead of standing
+# alone, so it's stripped from the end of the field rather than matched whole.
 RUNNING_HEADER_RE = re.compile(r"\s*DOG\s+N[uú]m\.\s*[\d.]+\s*$")
 
 # Private-use codepoints are a fixed Symbol-font mapping, verified in context
@@ -148,28 +118,12 @@ SYMBOL_MAP = {"\uf0b1": "±", "\uf061": "α", "\uf044": "Δ", "\uf06d": "μ"}
 # spellings reach the same key.
 SUBSCRIPT_PAIRS = [("R", "d"), ("C", "1"), ("B", "o"), ("U", "d"), ("R", "c")]
 
-# --- line-break hyphens -------------------------------------------------- #
-#
-# The Diario Oficial sets two justified columns and breaks words across lines.
-# docling rejoins the lines but keeps the hyphen and the column gutter, in
-# either order depending on which side of the break the glyph sat:
-#
-#     `super -ficie`   70 sites in Decreto 128/2023, 127 in DOG_2025
-#     `simi- lares`     2 sites in DccSUA
-#
-# Left alone these defeat the sweep on exactly the terms that carry the rules --
-# `superficie`, `fachadas`, `ventilación`, `paramento`, `comunicación` are all
-# split (#32, #41).
-#
-# The hazard is that the same documents use a bare hyphen as a *parenthetical
-# dash*: `espacios libres -públicos o privados- que no cumplan`. Joining that
-# fuses two real words (`privadosque`), which is worse than the split it fixes.
-#
-# The discriminator is pairing, and it is exact on all 219 sites in the corpus:
-# a parenthetical dash opens (`word -lower`) and closes (`lower- `), a line-break
-# hyphen never closes. Measured: 9 openers in Decreto 128/2023 find a closer, at
-# 17-55 characters; the other 61 find none; DOG_2025 has 127 openers and zero
-# closers; DccSUA has 2 pairs. The window is set well beyond the observed 55.
+# Line-break hyphens (`super -ficie`) split terms the sweep depends on and
+# must be rejoined; parenthetical dashes (`espacios libres -públicos o
+# privados- que`) must not be. Discriminator: parenthetical dashes pair (open
+# + close), line-break hyphens never close. Window (200) is set above the
+# longest observed pair (55 chars, measured across the corpus's 219 sites)
+# (#32, #41).
 DASH_PAIR_WINDOW = 200
 DASH_OPEN_RE = re.compile(r"(?<=[A-Za-zÁÉÍÓÚÜÑáéíóúüñ])\s+-(?=[a-záéíóúüñ])")
 DASH_CLOSE_RE = re.compile(r"(?<=[A-Za-zÁÉÍÓÚÜÑáéíóúüñ])-(?=[\s,.;:)]|$)")
@@ -199,9 +153,8 @@ def rejoin_hyphens(s: str) -> str:
     out.append(s[i:])
     s = "".join(out)
 
-    # The mirrored shape. Rare (2 real sites, both DccSUA) but the same rule:
-    # `simi- lares` joins, `privados- que` is the closing half of a pair and does
-    # not. Re-derived after the first pass, since the offsets have moved.
+    # Mirrored shape (`simi- lares`), rare (2 sites, DccSUA). Same pairing
+    # rule; re-derived since offsets moved after the first pass.
     protected = set()
     for m in DASH_OPEN_RE.finditer(s):
         close = DASH_CLOSE_RE.search(s, m.end(), m.end() + DASH_PAIR_WINDOW)
@@ -236,10 +189,8 @@ CITE_PATTERNS = [
 # numbered by position (#18).
 MARKER_RE = re.compile(r"^\s*([0-9]+|[a-zA-Z]|[ivxIVX]+)\s*[.)]\s*$")
 
-# DccSUA and DOG_2025 have no marker *hole* -- they print the marker inline at
-# the head of the item text (`1 La anchura...`), which docling leaves in `text`
-# and out of `marker`. That needs parsing, not recovery (#18); it addresses 158
-# of DccSUA's 359 list items that would otherwise have no cite.
+# DccSUA/DOG_2025 print the marker inline in `text` (`1 La anchura...`)
+# rather than in `marker`, so it needs parsing, not recovery (#18).
 INLINE_MARKER_RE = re.compile(
     r"^\s*([0-9]+(?:\.[0-9]+)*|[a-z]|[ivx]+)\s*[).]?\s+(?=[A-ZÁÉÍÓÚÜÑ])"
 )
@@ -249,23 +200,12 @@ INLINE_MARKER_RE = re.compile(
 # sub-items at ~83.5 -- the same ~13 pt gutter #18 read the eaten markers out of.
 INDENT_TOL = 6.0
 
-# A heading docling labelled `list_item`. In Decreto 128/2023 only 37 of the 114
-# items that print a letter-dotted cite and a title got `section_header`; the
-# other 77 arrive as `list_item` (or plain `text`), so without this the spine
-# holds no `A.2`, `A.2.1` or `A.2.2` at all and every provision on pp.19-22 --
-# including the 60º rule that decides whether two paramentos are *enfrentados* --
-# inherits the stale `A.1.2` five pages back. That is a wrong ancestor chain,
-# which is the one thing a citation does promise (#8).
-#
-# Keyed on the letter-dotted shape `parse_cite` already recognises, which is this
-# document's numbering scheme: DccSUA numbers `Sección SUA n` / `n.n` / `Anejo A`
-# and DOG_2025 has no dotted numbering, so this promotes 0 items in both --
-# measured, not assumed.
-#
-# The contents pages (pp.14-17) match too, and that is harmless rather than a
-# concession: nesting is by cite *prefix* (#32), so the index builds a stack that
-# the body's first heading pops in full -- `A.1` is not an extension of `B.3`.
-# The index entries were already records before this; the label is what changed.
+# A heading docling mislabelled `list_item`: in Decreto 128/2023, 77 of 114
+# letter-dotted headings arrive this way, leaving the spine without `A.2`
+# etc. and misattributing provisions on pp.19-22 to a stale ancestor (#8).
+# Keyed on the letter-dotted shape `parse_cite` already recognises; promotes
+# 0 items in DccSUA/DOG_2025's own numbering schemes, and the contents-page
+# matches (pp.14-17) are harmless since nesting is by cite prefix (#32).
 PROMOTABLE_HEADING_RE = re.compile(r"^[A-Z]\.[0-9]+(?:\.[0-9]+)*\.?\s+\S")
 # Guard against a paragraph that merely opens with a cite it is talking about.
 # Rejects nothing in the current corpus -- every promoted item is 11-99 chars.
@@ -280,22 +220,17 @@ MAX_PROMOTED_HEADING = 100
 def repair(text: str, ocr: bool) -> str:
     """Deterministic repairs on the rendered `text` (#28).
 
-    Not on this list, deliberately:
-
-    - `m2 -> m²`. The source itself writes `m2` in places, and architects and
-      the answering agent both read it correctly (#21, owner steer 2026-07-30).
-    - any `>` -> `≥` rewrite. Roughly one comparison in eight is genuinely
-      strict; the corpus uses 21 `<` and 13 `>` for real (#21).
-    - standalone `0` -> `o`. `0` is also a legitimate digit, so this is a
-      query-side equivalence and never an ingest rewrite (#14, #28).
+    Not on this list, deliberately: `m2 -> m²` (source itself writes `m2`,
+    readers handle it fine, #21); `>` -> `≥` (roughly 1 in 8 comparisons is
+    genuinely strict, #21); standalone `0` -> `o` (query-side equivalence
+    only, since `0` is also a legitimate digit, #14/#28).
     """
     for bad, good in SYMBOL_MAP.items():
         text = text.replace(bad, good)
     text = text.replace("><", "×")
     if ocr:
-        # `m²` reads as `m?` 25 times in HABITABILIDAD and correctly zero times
-        # (#11) -- the `?` is the OCR's failure to encode a superscript 2, not a
-        # character on the page.
+        # OCR encodes `m²` as `m?` (superscript 2 not recognized), never a
+        # real `?` in this corpus (#11).
         text = re.sub(r"(?<=\bm)\?", "²", text)
     return re.sub(r"\s+", " ", text).strip()
 
@@ -384,9 +319,8 @@ def cite_path(cite: str) -> str:
     s = re.sub(r"^Secci[oó]?n\s*", "sec", s, flags=re.IGNORECASE)
     s = re.sub(r"^Cap[ií]?tulo\s*", "cap", s, flags=re.IGNORECASE)
     s = re.sub(r"^T[ií]?tulo\s*", "tit", s, flags=re.IGNORECASE)
-    # Trailing punctuation is part of the printed cite (`a)`, `1.`) but not of
-    # the address: `art14.1.a` reads as an id, `art14.1.a)` reads as a typo.
-    # `cite` keeps what the page prints; `id` keeps what is addressable.
+    # Trailing punctuation (`a)`, `1.`) belongs to the printed cite, not the
+    # address: `cite` keeps it, `id` strips it.
     return re.sub(r"\s+", "", s).rstrip(".)")
 
 
@@ -399,19 +333,16 @@ UNNUMBERED = 99
 class Spine:
     """The heading stack, nested by printed cite rather than by adjacency.
 
-    `parent_id` from most-recent-header was the prototype's load-bearing defect
-    (#32): docling's `section_header` label carries no nesting level, so the walk
-    climbed siblings -- `B.2.6.2 Vías de circulación` came back as a child of
-    `B.2.6.1 Área de acceso`. The numbering already says `B.2.6.2` is a child of
-    `B.2.6`, so this reads the cite. `SectionHeaderItem.level` is discarded
-    outright; the emitted tree is inverted (#14).
+    Nesting by most-recent-header was the prototype's defect (#32): docling's
+    `section_header` label carries no nesting level, so `B.2.6.2` came back
+    as a sibling's child instead of `B.2.6`'s. This reads the cite instead
+    and discards `SectionHeaderItem.level` outright (#14).
     """
 
     def __init__(self) -> None:
-        # entries: (parts, rank, id) -- parts is [] for a namespace heading, and
-        # `rank` is None for a dotted-numbering one. The None is load-bearing:
-        # `push_numbered` reads it to tell "still inside the same numbering
-        # space" from "hit the namespace that opened it".
+        # (parts, rank, id): parts is [] for a namespace heading; rank is
+        # None for dotted numbering, which `push_numbered` reads to tell
+        # "still in this numbering space" from "hit the namespace above it".
         self.stack: list[tuple[list[str], int | None, str]] = []
 
     def parent(self) -> str:
@@ -446,9 +377,8 @@ class Spine:
     def push_unnumbered(self, ident: str) -> str:
         """An unnumbered heading is a leaf of the nearest numbered ancestor.
 
-        It is not incidental: 33 of DccSUA's 209 unnumbered headings are binding
-        normative text, including all 30 entries of Anejo A Terminología, which
-        is where the document defines the terms its articulado cites (#12).
+        Not incidental: 33 of DccSUA's 209 unnumbered headings are binding
+        normative text, including Anejo A Terminología (#12).
         """
         while self.stack and self.stack[-1][1] == UNNUMBERED:
             self.stack.pop()
@@ -465,12 +395,10 @@ class Spine:
 def load_provenance(doc: str, *, tuned: Path) -> list[tuple[int, int, str]]:
     """Per-page-range extraction source, from the Stage 1 pipeline record.
 
-    `*.pipeline.json` is document-level, and a document-level flag would
-    disclaim HABITABILIDAD's native tail -- which is #21's own ground truth --
-    so the ranges are explicit (#27).
-
-    `tuned` is passed rather than read from a module global so a test can point
-    two cases at two different fixture roots in one process (#46).
+    Ranges are explicit rather than a document-level flag, which would
+    disclaim HABITABILIDAD's native tail -- #21's own ground truth (#27).
+    `tuned` is a parameter, not a module global, so tests can use different
+    fixture roots in one process (#46).
     """
     cfg = json.loads((tuned / f"{doc}.pipeline.json").read_text())
     if cfg.get("profile") != "ocr":
@@ -494,17 +422,11 @@ def ingest_doc(
     def is_ocr(page: int) -> bool:
         return any(a <= page <= b for a, b, _ in ocr_ranges)
 
-    # Figure regions, per page. Text landing inside one is a figure label, not
-    # body: `máx`, `Q;`, `eje`, `<30 cm PLANTA` sit physically between two
-    # headers and would otherwise inherit the parent -- 18 of 24 children of one
-    # HABITABILIDAD heading were figure noise. Figure *positions* stay in scope;
-    # figure *content* does not (#3).
-    #
-    # A picture box that swallows a `section_header` or a `list_item` is not a
-    # figure -- it is a mis-boxed page raster, which is the normal case in a
-    # fully bitmap-rendered document. Containment alone would have eaten 2,670 of
-    # HABITABILIDAD's 3,887 text items, i.e. most of the articulado; the
-    # structural-item test disqualifies 6 boxes of 76 and brings that to 505.
+    # Text inside a figure region is a figure label, not body text (#3): 18 of
+    # 24 children of one HABITABILIDAD heading were figure noise. A box that
+    # swallows a `section_header`/`list_item` is a mis-boxed page raster, not
+    # a real figure -- containment alone would have eaten 2,670 of
+    # HABITABILIDAD's 3,887 text items; this test brings that down to 505.
     figures = defaultdict(list)
     for pic in data.get("pictures", []):
         for prov in pic.get("prov") or []:
@@ -539,20 +461,16 @@ def ingest_doc(
         if not prov:
             continue
         items.append((prov.get("page_no", 0), top_key(prov), "table", tab, prov))
-    # Figure *positions* are in scope even though figure content is not (#3), so
-    # each picture lands as a record the agent can point at. They carry no text
-    # -- 56 of 56 in HABITABILIDAD pp.1-94 are empty placeholders (#27) -- which
-    # is exactly why the line art's manufactured `≤` never enters the substrate.
+    # Figure positions stay in scope even though content doesn't (#3); pictures
+    # carry no text (56/56 in HABITABILIDAD pp.1-94 are empty placeholders, #27).
     for pic in data.get("pictures", []):
         prov = (pic.get("prov") or [{}])[0]
         if not prov:
             continue
         items.append((prov.get("page_no", 0), top_key(prov), "picture", pic, prov))
-    # Reading order: page, then line, then left-to-right within the line. The
-    # left tie-break is not cosmetic -- without it `B.2.6.3. Áreas de
-    # aparcamiento` comes back as `B.2.6.3. de aparcamiento. Áreas`, because a
-    # heading split across three boxes on one line has three near-identical
-    # `t` values and no ordering between them.
+    # Reading order: page, then line, then left-to-right. The left tie-break
+    # matters -- without it, a heading split across boxes on one line can come
+    # back reordered, since same-line `t` values are near-identical.
     items.sort(
         key=lambda x: (
             x[0],
@@ -572,10 +490,9 @@ def ingest_doc(
             path = f"§{positional[page]}"
         ident = f"{code}:p{page}:{path}"
         if ident in ids_seen:
-            # The source itself is not internally consistent -- HABITABILIDAD
-            # p.85 prints its Anexo II index as `1, 2, 2, 3` -- so a printed cite
-            # locates but does not uniquely identify (#4). `id` is ours and
-            # stays unique; `cite` keeps what the page prints.
+            # Printed cites aren't always unique (HABITABILIDAD p.85's Anexo
+            # II index repeats "2"): `id` stays unique, `cite` keeps what the
+            # page prints (#4).
             n = 2
             while f"{ident}~{n}" in ids_seen:
                 n += 1
@@ -654,11 +571,9 @@ def ingest_doc(
         if label == "section_header":
             cite, ckind, rank = parse_cite(raw)
             ident = make_id(page, cite_path(cite) if cite else None)
-            # `parse_cite`'s three return slots are correlated -- a `num` always
-            # carries a cite, an `ns` always carries a rank -- but the type is a
-            # plain tuple, so nothing propagates that from the `ckind` test to
-            # the other two slots. Asserting states the invariant where it is
-            # relied on, and fails loudly if a new CITE_PATTERNS row breaks it.
+            # `parse_cite`'s slots are correlated (`num` always carries a
+            # cite, `ns` always carries a rank) but the type is a plain
+            # tuple, so the invariant is asserted here rather than left implicit.
             if ckind == "num":
                 assert cite is not None
                 parent = spine.push_numbered(cite_path(cite), ident)
@@ -684,12 +599,10 @@ def ingest_doc(
                 cite = m.group(1)
 
         if label == "list_item":
-            # Nest sub-items under their own item, by indent. `art14.1.a`'s
-            # encimera applies only under `art14.1`'s no-new-rooms condition, so
-            # flattening every item onto its heading would put the qualifier out
-            # of the ancestor chain that #4's read contract promises. Indent is
-            # the signal that survived: `formatting` is empty corpus-wide (#14)
-            # and the marker glyph is often the thing that went missing (#18).
+            # Nest sub-items under their own item, by indent, so a qualifier
+            # like `art14.1.a` stays under `art14.1` in the ancestor chain
+            # (#4). Indent is the surviving signal: `formatting` is empty
+            # corpus-wide and the marker glyph often goes missing (#14, #18).
             left = bbox.get("l", 0.0)
             while list_stack and list_stack[-1][0] >= left - INDENT_TOL:
                 list_stack.pop()
@@ -706,10 +619,9 @@ def ingest_doc(
         else:
             path = None
             if label == "list_item":
-                # A provision printed without a recoverable marker is faithfully
-                # extracted -- addressability is a fact about the source, not an
-                # extraction defect (#27). It still gets a positional id, and its
-                # empty `cite` is what says it is unaddressed (#4).
+                # Extracted faithfully even with no recoverable marker --
+                # addressability is a source fact, not an extraction defect
+                # (#27). Gets a positional id; empty `cite` marks it unaddressed (#4).
                 stats["unaddressed_items"] += 1
         ident = make_id(page, path)
         if label == "list_item":
@@ -719,12 +631,11 @@ def ingest_doc(
 
 
 def serialize_table(node: Node) -> str | None:
-    """One record per table -- atomic on read (#4), cells inline for search.
+    """One record per table -- atomic on read (#4), cells inline for search
+    since #32 dropped the separate `<DOC>.cells.tsv` projection.
 
-    #32 collapsed the substrate to a single `corpus.tsv` and dropped the
-    separate `<DOC>.cells.tsv` projection, so the cells have to be searchable
-    inside the table's own record. Returns None where the grid does not resolve
-    (#4, decision 4): p.50 merges two logical tables.
+    Returns None where the grid doesn't resolve, e.g. p.50 merges two
+    logical tables (#4, decision 4).
     """
     data = node.get("data") or {}
     cells = data.get("table_cells") or []
@@ -778,12 +689,10 @@ def row(
 def write_tsv(
     path: Path, columns: list[str], rows: Sequence[Mapping[str, object]]
 ) -> None:
-    """Plain TSV -- no quoting, no escaping, so `awk -F'\\t'` and `cut` just work.
-
-    The substrate is read by line-oriented shell tools (#33), which do not
-    implement RFC 4180. Fields are therefore made tab- and newline-free on the
-    way in rather than quoted on the way out; `repair()` and `normalize()`
-    already collapse whitespace, and this is the backstop.
+    """Plain TSV -- no quoting, no escaping, so `awk -F'\\t'` and `cut` just
+    work with the line-oriented shell tools that read the substrate (#33).
+    Fields are stripped of tabs/newlines here as a backstop, rather than
+    quoted, since `repair()`/`normalize()` already collapse whitespace.
     """
     with path.open("w") as fh:
         fh.write("\t".join(columns) + "\n")
