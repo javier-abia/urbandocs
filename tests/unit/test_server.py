@@ -6,6 +6,12 @@ Everything else about these operations is a plain-function test in
 logic of its own (#59), so this file's whole job is to prove the wire agrees
 with the function: each tool is listed under its name with a non-empty
 description, and a call returns the same result the underlying function would.
+
+The description-content tests below are #64's: MCP cannot compel the sweep
+->rank->get->expand loop or the evidence-only contract, so those instructions
+only reach the calling agent if the text carries them and stays intact
+through the gateway (#43, checked at deploy by #53) -- these tests are the
+in-repo half of that guarantee.
 """
 
 from __future__ import annotations
@@ -18,7 +24,13 @@ from mcp.client.session import ClientSession
 
 from urbandocs.read import get, get_page
 from urbandocs.resolve import get_by_cite
-from urbandocs.server import build_server
+from urbandocs.server import (
+    GET_BY_CITE_DESCRIPTION,
+    GET_DESCRIPTION,
+    GET_PAGE_DESCRIPTION,
+    SEARCH_DESCRIPTION,
+    build_server,
+)
 from urbandocs.substrate import load_substrate
 
 
@@ -30,6 +42,39 @@ def anyio_backend():
 @pytest.fixture(scope="module")
 def substrate(fixture_dir):
     return load_substrate(corpus_path=fixture_dir / "corpus.tsv")
+
+
+@pytest.mark.anyio
+async def test_search_is_listed_with_a_non_empty_description(substrate):
+    server = build_server(substrate)
+    async with (
+        InMemoryTransport(server) as (read, write),
+        ClientSession(read, write) as session,
+    ):
+        await session.initialize()
+        tools = await session.list_tools()
+        tool = next(t for t in tools.tools if t.name == "search")
+        assert tool.description and tool.description.strip()
+
+
+@pytest.mark.anyio
+async def test_all_four_tools_are_listed_with_non_empty_descriptions(substrate):
+    """The corpus-wide sweep is structural, but everything past it -- rank,
+    get, expand, the single refine round, the no-ruling contract -- is
+    instructed through these descriptions (#64). A tool listed with an empty
+    or missing one silently drops that instruction."""
+    server = build_server(substrate)
+    async with (
+        InMemoryTransport(server) as (read, write),
+        ClientSession(read, write) as session,
+    ):
+        await session.initialize()
+        tools = await session.list_tools()
+
+    by_name = {t.name: t.description for t in tools.tools}
+    assert set(by_name) == {"search", "get", "get_by_cite", "get_page"}
+    for name, description in by_name.items():
+        assert description and description.strip(), name
 
 
 @pytest.mark.anyio
@@ -152,3 +197,37 @@ async def test_get_page_out_of_range_is_a_tool_error_not_an_empty_result(substra
         result = await session.call_tool("get_page", {"doc": "SUA", "page": 9999})
 
     assert result.is_error
+
+
+# --------------------------------------------------------------------------- #
+# #64: the instructed loop only reaches the calling agent if this text does.
+# Plain string checks on the module constants, not over the wire -- these
+# fail the moment a phrase is trimmed or dropped, which is the point.
+# --------------------------------------------------------------------------- #
+
+
+def test_search_description_states_the_term_floor_and_stems():
+    assert "own term" in SEARCH_DESCRIPTION
+    assert "stem" in SEARCH_DESCRIPTION
+    assert '"anch"' in SEARCH_DESCRIPTION
+
+
+def test_search_description_states_the_loop_order_and_single_refine_round():
+    for step in ("sweep", "rank", "`get`", "expand"):
+        assert step in SEARCH_DESCRIPTION
+    assert "one refine round" in SEARCH_DESCRIPTION
+
+
+def test_descriptions_state_the_evidence_only_contract():
+    for phrase in ("no synthesis", "no ruling", "no verdict"):
+        assert phrase in SEARCH_DESCRIPTION
+    assert "not a ruling" in GET_DESCRIPTION
+
+
+def test_get_by_cite_description_states_it_is_a_resolver_not_a_getter():
+    assert "Returns addresses only" in GET_BY_CITE_DESCRIPTION
+    assert "never legal text" in GET_BY_CITE_DESCRIPTION
+
+
+def test_get_page_description_states_it_is_off_loop():
+    assert "Off-loop" in GET_PAGE_DESCRIPTION

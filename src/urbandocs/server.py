@@ -37,6 +37,10 @@ STREAMABLE_HTTP_PATH = "/mcp"
 # call sequence (#59): this text is what stops a sweep from silently missing
 # a term and returning a clean, wrong empty list. Terms are submitted as
 # stems, not full words -- "anch" reaches both "ancho" and "anchura" (#9).
+# Also carries the loop order and the evidence contract (#64): MCP cannot
+# enforce either, so the calling agent has to be told sweep -> rank -> get ->
+# expand with one refine round, and that this engine never rules or verifies
+# completeness on its behalf.
 SEARCH_DESCRIPTION = (
     "Sweep the whole normativa corpus for the given terms and return the "
     "complete ranked list of matching sections, never truncated. Submit "
@@ -49,7 +53,15 @@ SEARCH_DESCRIPTION = (
     "not an error. Each returned section carries an address only -- "
     "document, PDF page, full ancestor heading chain, section id, and "
     "matched child ids -- never the provision's legal text; call `get` on "
-    "the ids that matter to read it."
+    "the ids that matter to read it. This is the first step of a fixed loop: "
+    "sweep here, rank arrives pre-sorted, `get` the sections that matter, "
+    "then expand by following at most one in-corpus pointer (a cite via "
+    "`get_by_cite`, or a cross-reference to another document) and search "
+    "again if the pointer opens a new question -- one refine round, not a "
+    "recursion. The engine returns evidence, never an answer: no synthesis "
+    "across sections, no ruling on which provision governs, and no verdict "
+    "that a sweep was complete -- every result has to be opened and verified "
+    "at its cited source."
 )
 
 # Names the ancestor chain and children explicitly, not just "context" (#60):
@@ -63,7 +75,10 @@ GET_DESCRIPTION = (
     "lives in the parent and the obligation it introduces often lives in the "
     "children. Batch several ids in one call rather than calling once per id. "
     "An id not found in the corpus is reported by itself and does not fail "
-    "the rest of the batch; a large batch is never truncated or refused."
+    "the rest of the batch; a large batch is never truncated or refused. This "
+    "is the loop's `get` step, called on what `search` ranked -- the text it "
+    "returns is evidence to read and verify, not a ruling and not a "
+    "paraphrase to repeat as an answer."
 )
 
 # States "a resolver, never a getter" up front (#61) -- the name reads like it
@@ -79,7 +94,9 @@ GET_BY_CITE_DESCRIPTION = (
     "that matches nothing in the corpus returns an empty list, not an error. "
     "`doc` optionally filters the candidates to one document -- it helps when "
     "the collision happens to cross documents, but most ambiguity is inside a "
-    "single document and survives the filter."
+    "single document and survives the filter. This is the loop's `expand` "
+    "step: use it to follow a pointer found in a `get` result (e.g. "
+    '"según la tabla 1.2") one hop, not to repeat the sweep.'
 )
 
 # States the no-range rule and why up front (#62): the cost of a range call is
