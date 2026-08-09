@@ -1,20 +1,16 @@
 """The MCP transport adapter: `search` exposed over streamable HTTP (#59).
 
 Holds no retrieval logic of its own -- `urbandocs.search.search` and
-`urbandocs.substrate.load_substrate` are already complete without it (#56):
-this module's whole job is the wire. It loads the substrate once at startup,
-fail-loud (#38, #56's own contract), registers `search` as the one MCP tool
-this ticket lands, and binds loopback-only with DNS-rebinding protection as
-the engine's only control (#43) -- the engine authenticates nobody; identity
-and attribution are the gateway's virtual keys.
+`urbandocs.substrate.load_substrate` are already complete (#56); this
+module's job is the wire. Loads the substrate once at startup, fail-loud
+(#38, #56), registers `search` as the one MCP tool, and binds loopback-only
+with DNS-rebinding protection, since the engine authenticates nobody --
+identity and attribution are the gateway's job (#43).
 
     uv run -m urbandocs.server
 
-Fixed by #43, not re-derived here: streamable HTTP, `127.0.0.1:8848`, path
-`/mcp`. Not the LAN, not `0.0.0.0` -- LiteLLM on the same box is the only
-caller. `enable_dns_rebinding_protection` stays on with `allowed_hosts` set to
-that same loopback host:port and nothing else, because `Origin` validation is
-the engine's only remaining control with no auth of its own.
+Fixed by #43: streamable HTTP, `127.0.0.1:8848`, path `/mcp`. Not the LAN --
+LiteLLM on the same box is the only caller.
 """
 
 from __future__ import annotations
@@ -30,14 +26,10 @@ HOST = "127.0.0.1"
 PORT = 8848
 STREAMABLE_HTTP_PATH = "/mcp"
 
-# The term floor, shipped as a tool description rather than left as
-# documentation (#59): MCP cannot compel a call sequence, so this sentence is
-# what stands between the calling agent and #28's worst failure shape -- a
-# sweep that silently missed a term and returned a clean, wrong empty list.
-# Every content word its own slot, entity and attribute separately, submitted
-# as a stem rather than a full word: "anch" reaches both "ancho" and
-# "anchura"; "instal" reaches both documents' vocabulary where either full
-# word alone reaches only one (#9).
+# The term floor, shipped as a tool description since MCP cannot compel a
+# call sequence (#59): this text is what stops a sweep from silently missing
+# a term and returning a clean, wrong empty list. Terms are submitted as
+# stems, not full words -- "anch" reaches both "ancho" and "anchura" (#9).
 SEARCH_DESCRIPTION = (
     "Sweep the whole normativa corpus for the given terms and return the "
     "complete ranked list of matching sections, never truncated. Submit "
@@ -72,11 +64,9 @@ def build_server(substrate: Substrate) -> MCPServer:
 def main() -> None:
     """Load the substrate and serve `search` over streamable HTTP.
 
-    `load_substrate()` raises `SubstrateError` on anything short of a
-    well-formed corpus -- missing file, bad header, bad column count (#56) --
-    and nothing here catches it: a malformed substrate must refuse to start,
-    never come up serving as though it were a corpus with no hits (#59's own
-    acceptance criterion).
+    `load_substrate()` raises `SubstrateError` on a malformed corpus, and
+    nothing here catches it: startup must fail loudly rather than serve as
+    though the corpus had no hits (#56, #59).
     """
     substrate = load_substrate()
     server = build_server(substrate)

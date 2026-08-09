@@ -1,17 +1,13 @@
 """Locating the repo's data from inside the package.
 
-The engine and Stage 2 read files that live at the repo root -- the committed
-`docling-tuned/*.json` that Stage 1 emits, and the `corpus/` Stage 2 derives from
-them (#46). Neither is package data: `docling-tuned/` is a shared *input* that
-`tools/docling-convert/` also writes, and `corpus/` is gitignored and rebuilt in
-under a second. So the package has to find them at runtime.
+Reads live at the repo root, not as package data: `docling-tuned/*.json` is a
+shared input `tools/docling-convert/` also writes, and `corpus/` is
+gitignored and rebuilt in under a second (#46).
 
-`parents[N]` from `__file__` is what `scripts/` used, and it is wrong here for two
-reasons: the depth is a magic number that breaks the moment a module moves into a
-subpackage, and it resolves to site-packages if the project is ever installed
-non-editable. Anchoring on a marker file fixes both -- the search finds the repo
-wherever the module sits, and finds *nothing* rather than something plausible if
-there is no repo above it.
+Not `parents[N]` from `__file__` (`scripts/`'s approach): the depth is a
+magic number, and it resolves into site-packages if installed non-editable.
+Anchors on a marker file instead, so the search finds nothing rather than
+something plausible when there is no repo above it.
 
 Resolution order, most explicit first:
 
@@ -25,9 +21,8 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-#: Marker that identifies the repo root. `.git` is deliberately not used as well:
-#: it is absent from a deployed checkout made by `git archive` or a release
-#: tarball, and a marker that disappears in production is worse than no marker.
+#: Marker for the repo root. Not `.git`: absent from a `git archive` checkout
+#: or release tarball, and a marker that vanishes in production is worse than none.
 ANCHOR = "pyproject.toml"
 
 ENV_VAR = "URBANDOCS_ROOT"
