@@ -1,11 +1,12 @@
 """Load `corpus.tsv` into memory: the substrate every engine operation runs over.
 
 Reads the file once, at process start (#56, #58) -- a rebuild is a restart, not
-a hot reload -- and builds the `by_id` index and the `parent_id` adjacency
-(`children`) that a children lookup needs, plus `ancestor_chain`, the walk
-`search` and `get` (#56, #58, #60) both climb `by_id` for; both indices are
-built here, once, so `load_substrate` stays the single place `corpus.tsv` is
-read. 2,455 records / 1.3 MB today; loading is cheap.
+a hot reload -- and builds the `by_id` index, the `parent_id` adjacency
+(`children`) that a children lookup needs, and the `by_cite` index
+`get_by_cite` (#61) resolves through, plus `ancestor_chain`, the walk `search`
+and `get` (#56, #58, #60) both climb `by_id` for; every index is built here,
+once, so `load_substrate` stays the single place `corpus.tsv` is read. 2,455
+records / 1.3 MB today; loading is cheap.
 
 Never `csv.reader` (#33, #56): the substrate is plain TSV with no quoting, and
 the default dialect silently merges fields on a record that contains a `"` --
@@ -53,6 +54,10 @@ class Substrate:
     by_id: dict[str, Row]
     #: parent_id -> ids of its direct children, in file order.
     children: dict[str, list[str]]
+    #: printed cite -> ids of every record that prints it, in file order. A
+    #: record with an empty `cite` is not keyed here at all -- unreachable by
+    #: `get_by_cite`, which is a fact about the source, not an error (#4, #61).
+    by_cite: dict[str, list[str]]
 
 
 def ancestor_chain(record_id: str, substrate: Substrate) -> list[str]:
@@ -122,6 +127,7 @@ def load_substrate(
     records: list[Row] = []
     by_id: dict[str, Row] = {}
     children: dict[str, list[str]] = defaultdict(list)
+    by_cite: dict[str, list[str]] = defaultdict(list)
 
     for lineno, fields in enumerate(raw_rows, start=2):
         values = dict(zip(COLUMNS, fields, strict=True))
@@ -149,5 +155,9 @@ def load_substrate(
         by_id[record["id"]] = record
         if record["parent_id"]:
             children[record["parent_id"]].append(record["id"])
+        if record["cite"]:
+            by_cite[record["cite"]].append(record["id"])
 
-    return Substrate(records=records, by_id=by_id, children=dict(children))
+    return Substrate(
+        records=records, by_id=by_id, children=dict(children), by_cite=dict(by_cite)
+    )

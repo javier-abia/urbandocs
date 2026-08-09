@@ -1,13 +1,12 @@
-"""The MCP transport adapter: `search` and `get` exposed over streamable HTTP
-(#59, #60).
+"""The MCP transport adapter: `search`, `get` and `get_by_cite` exposed over
+streamable HTTP (#59, #60, #61).
 
-Holds no retrieval logic of its own -- `urbandocs.search.search` and
-`urbandocs.read.get` are already complete without it (#56), same as
-`urbandocs.substrate.load_substrate`: this module's whole job is the wire. It
-loads the substrate once at startup, fail-loud (#38, #56's own contract),
-registers each operation as an MCP tool, and binds loopback-only with
-DNS-rebinding protection as the engine's only control (#43) -- the engine
-authenticates nobody; identity and attribution are the gateway's virtual keys.
+Holds no retrieval logic of its own -- `urbandocs.search.search`,
+`urbandocs.read.get` and `urbandocs.resolve.get_by_cite` are already complete
+(#56); this module's job is the wire. Loads the substrate once at startup,
+fail-loud (#38, #56), registers each operation as an MCP tool, and binds
+loopback-only with DNS-rebinding protection, since the engine authenticates
+nobody -- identity and attribution are the gateway's job (#43).
 
     uv run -m urbandocs.server
 
@@ -22,6 +21,8 @@ from mcp.server.transport_security import TransportSecuritySettings
 
 from urbandocs.read import GetResponse
 from urbandocs.read import get as _get
+from urbandocs.resolve import CiteCandidate
+from urbandocs.resolve import get_by_cite as _get_by_cite
 from urbandocs.search import RankedSection
 from urbandocs.search import search as _search
 from urbandocs.substrate import Substrate, load_substrate
@@ -49,11 +50,9 @@ SEARCH_DESCRIPTION = (
     "the ids that matter to read it."
 )
 
-# Batching and the two failure shapes this operation must never produce,
-# stated up front rather than left implicit (#60): a batch that came back
-# short of what was asked, and a rule returned without the context that makes
-# it correct -- so the description names both the ancestor chain and the
-# children explicitly, not just "context".
+# Names the ancestor chain and children explicitly, not just "context" (#60):
+# a batch that comes back short, or a rule returned without its qualifier or
+# obligation, are the two failure shapes this must not produce.
 GET_DESCRIPTION = (
     "Return verbatim legal text for one or more section or record ids from "
     "`search`. Each result carries the record's own text, its full ancestor "
@@ -63,6 +62,22 @@ GET_DESCRIPTION = (
     "children. Batch several ids in one call rather than calling once per id. "
     "An id not found in the corpus is reported by itself and does not fail "
     "the rest of the batch; a large batch is never truncated or refused."
+)
+
+# States "a resolver, never a getter" up front (#61) -- the name reads like it
+# returns the cited thing, and most cites in this corpus are ambiguous enough
+# that a single record would misrepresent the source.
+GET_BY_CITE_DESCRIPTION = (
+    'Resolve a printed cite -- "1.2", "a)", "Anejo B", "Artículo 14" -- '
+    "exactly as it appears on the page, to every record that prints it. "
+    "Returns addresses only -- id, document, PDF page, ancestor heading chain "
+    "-- never legal text, because the same cite is often printed by several "
+    "records and this tool returns all of them rather than guessing which one "
+    "was meant; call `get` on whichever candidate id is the right one. A cite "
+    "that matches nothing in the corpus returns an empty list, not an error. "
+    "`doc` optionally filters the candidates to one document -- it helps when "
+    "the collision happens to cross documents, but most ambiguity is inside a "
+    "single document and survives the filter."
 )
 
 
@@ -81,6 +96,10 @@ def build_server(substrate: Substrate) -> MCPServer:
     @server.tool(description=GET_DESCRIPTION)
     def get(ids: list[str]) -> GetResponse:
         return _get(ids, substrate)
+
+    @server.tool(description=GET_BY_CITE_DESCRIPTION)
+    def get_by_cite(cite: str, doc: str | None = None) -> list[CiteCandidate]:
+        return _get_by_cite(cite, substrate, doc)
 
     return server
 
