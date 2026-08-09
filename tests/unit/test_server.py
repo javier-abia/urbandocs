@@ -16,7 +16,7 @@ import pytest
 from mcp.client._memory import InMemoryTransport
 from mcp.client.session import ClientSession
 
-from urbandocs.read import get
+from urbandocs.read import get, get_page
 from urbandocs.resolve import get_by_cite
 from urbandocs.server import build_server
 from urbandocs.substrate import load_substrate
@@ -107,3 +107,48 @@ async def test_get_by_cite_over_the_wire_honours_the_doc_filter(substrate):
         result = await session.call_tool("get_by_cite", {"cite": "B.1", "doc": "D128"})
 
     assert result.structured_content == {"result": [asdict(c) for c in want]}
+
+
+@pytest.mark.anyio
+async def test_get_page_is_listed_with_a_non_empty_description(substrate):
+    server = build_server(substrate)
+    async with (
+        InMemoryTransport(server) as (read, write),
+        ClientSession(read, write) as session,
+    ):
+        await session.initialize()
+        tools = await session.list_tools()
+        tool = next(t for t in tools.tools if t.name == "get_page")
+        assert tool.description and tool.description.strip()
+
+
+@pytest.mark.anyio
+async def test_get_page_over_the_wire_returns_the_same_records_as_the_function(
+    substrate,
+):
+    want = get_page("SUA", 76, substrate)
+
+    server = build_server(substrate)
+    async with (
+        InMemoryTransport(server) as (read, write),
+        ClientSession(read, write) as session,
+    ):
+        await session.initialize()
+        result = await session.call_tool("get_page", {"doc": "SUA", "page": 76})
+
+    assert result.structured_content == {"result": [asdict(r) for r in want]}
+
+
+@pytest.mark.anyio
+async def test_get_page_out_of_range_is_a_tool_error_not_an_empty_result(substrate):
+    """`UnknownPageError` (#62) must surface as a reported failure over the
+    wire, not the empty list a page with no records returns."""
+    server = build_server(substrate)
+    async with (
+        InMemoryTransport(server) as (read, write),
+        ClientSession(read, write) as session,
+    ):
+        await session.initialize()
+        result = await session.call_tool("get_page", {"doc": "SUA", "page": 9999})
+
+    assert result.is_error
