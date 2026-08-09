@@ -61,6 +61,22 @@ def test_loads_every_record_no_row_lost_to_merging(fixture_dir, corpus_rows):
     assert len(substrate.records) == len(corpus_rows)
 
 
+def test_by_cite_index_groups_by_printed_cite(fixture_dir):
+    """The index `get_by_cite` resolves through (#61) -- built once at load
+    time, same as `children`."""
+    substrate = load_substrate(corpus_path=fixture_dir / "corpus.tsv")
+    assert set(substrate.by_cite["a)"]) >= {
+        "D128:p25:A.3.2.1.a",
+        "D128:p32:A.4.2.1.a",
+    }
+    assert all(substrate.by_id[rid]["cite"] == "a)" for rid in substrate.by_cite["a)"])
+
+
+def test_by_cite_index_excludes_records_with_no_cite(fixture_dir):
+    substrate = load_substrate(corpus_path=fixture_dir / "corpus.tsv")
+    assert "" not in substrate.by_cite
+
+
 def test_children_index_groups_by_parent_id(fixture_dir):
     """The adjacency `search`'s child-matching and `get`'s ancestor walk both
     need (#56) -- built once at load time rather than scanned per call."""

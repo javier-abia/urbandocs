@@ -1,10 +1,11 @@
-"""`get` on the wire: the one place this suite crosses the MCP transport (#60).
+"""`get` and `get_by_cite` on the wire: the one place this suite crosses the
+MCP transport (#60, #61).
 
-Everything else about `get` is a plain-function test in `test_read.py` --
-`build_server` holds no retrieval logic of its own (#59), so this file's whole
-job is to prove the wire agrees with the function: the tool is listed under
-its name with a non-empty description, and a call returns the same records
-`urbandocs.read.get` would.
+Everything else about these operations is a plain-function test in
+`test_read.py` and `test_resolve.py` -- `build_server` holds no retrieval
+logic of its own (#59), so this file's whole job is to prove the wire agrees
+with the function: each tool is listed under its name with a non-empty
+description, and a call returns the same result the underlying function would.
 """
 
 from __future__ import annotations
@@ -16,6 +17,7 @@ from mcp.client._memory import InMemoryTransport
 from mcp.client.session import ClientSession
 
 from urbandocs.read import get
+from urbandocs.resolve import get_by_cite
 from urbandocs.server import build_server
 from urbandocs.substrate import load_substrate
 
@@ -60,3 +62,48 @@ async def test_get_over_the_wire_returns_the_same_records_as_the_function(substr
         "records": [asdict(r) for r in want.records],
         "unknown_ids": want.unknown_ids,
     }
+
+
+@pytest.mark.anyio
+async def test_get_by_cite_is_listed_with_a_non_empty_description(substrate):
+    server = build_server(substrate)
+    async with (
+        InMemoryTransport(server) as (read, write),
+        ClientSession(read, write) as session,
+    ):
+        await session.initialize()
+        tools = await session.list_tools()
+        tool = next(t for t in tools.tools if t.name == "get_by_cite")
+        assert tool.description and tool.description.strip()
+
+
+@pytest.mark.anyio
+async def test_get_by_cite_over_the_wire_returns_the_same_candidates_as_the_function(
+    substrate,
+):
+    want = get_by_cite("a)", substrate)
+
+    server = build_server(substrate)
+    async with (
+        InMemoryTransport(server) as (read, write),
+        ClientSession(read, write) as session,
+    ):
+        await session.initialize()
+        result = await session.call_tool("get_by_cite", {"cite": "a)"})
+
+    assert result.structured_content == {"result": [asdict(c) for c in want]}
+
+
+@pytest.mark.anyio
+async def test_get_by_cite_over_the_wire_honours_the_doc_filter(substrate):
+    want = get_by_cite("B.1", substrate, doc="D128")
+
+    server = build_server(substrate)
+    async with (
+        InMemoryTransport(server) as (read, write),
+        ClientSession(read, write) as session,
+    ):
+        await session.initialize()
+        result = await session.call_tool("get_by_cite", {"cite": "B.1", "doc": "D128"})
+
+    assert result.structured_content == {"result": [asdict(c) for c in want]}
