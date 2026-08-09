@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from urbandocs.read import get
+from urbandocs.read import UnknownPageError, get, get_page
 from urbandocs.substrate import load_substrate
 
 
@@ -136,3 +136,74 @@ def test_an_oversized_batch_is_disclosed_never_truncated_never_refused(substrate
     response = get(all_ids, substrate)
     assert [r.id for r in response.records] == all_ids
     assert response.unknown_ids == []
+
+
+# --------------------------------------------------------------------------- #
+# `get_page`: every record on one page, in bbox reading order (#62)
+# --------------------------------------------------------------------------- #
+
+
+def test_records_come_back_in_bbox_order_not_id_order(substrate):
+    """`SUA` p.76's ids interleave `B.n.n` headings with positional `§n`
+    markers -- sorted by id, `§1` would land before `B.1.1.1.3.1` and after
+    `B.1.1.1.3`, not where it actually sits on the page. This is the fixture's
+    reading order (its README), not a lexical one -- any implementation that
+    re-sorts the ids fails this."""
+    records = get_page("SUA", 76, substrate)
+    assert [r.id for r in records] == [
+        "SUA:p76:B.1.1.1.3",
+        "SUA:p76:B.1.1.1.3.1",
+        "SUA:p76:§1",
+        "SUA:p76:§2",
+        "SUA:p76:B.1.1.1.3.2",
+        "SUA:p76:B.1.1.1.3.2.a",
+        "SUA:p76:B.1.1.1.3.2.a.i",
+        "SUA:p76:§3",
+        "SUA:p76:§4",
+        "SUA:p76:B.1.1.1.3.2.b",
+        "SUA:p76:B.1.1.1.3.2.c",
+        "SUA:p76:B.1.1.1.3.3",
+        "SUA:p76:B.1.1.2",
+        "SUA:p76:B.1.1.2.1",
+        "SUA:p76:B.1.1.2.1.a",
+        "SUA:p76:§5",
+        "SUA:p76:§6",
+        "SUA:p76:§7",
+        "SUA:p76:§8",
+        "SUA:p76:§9",
+        "SUA:p76:§10",
+        "SUA:p76:B.1.1.2.1.b",
+    ]
+
+
+def test_every_record_carries_its_id_and_label(substrate):
+    """`DOG` p.1 mixes text, headings and picture placeholders -- `label` is
+    what tells a picture's empty `text` apart from a record that lost its text
+    some other way."""
+    records = get_page("DOG", 1, substrate)
+    assert [r.id for r in records] == [f"DOG:p1:§{n}" for n in range(1, 22)]
+    pictures = [r for r in records if r.label == "picture"]
+    assert [r.id for r in pictures] == ["DOG:p1:§1", "DOG:p1:§13", "DOG:p1:§14"]
+    assert all(r.text == "" for r in pictures)
+
+
+def test_a_page_with_no_records_returns_empty_not_an_error(substrate):
+    """`SUA` p.2 is inside the document (1-79) but carries no record in this
+    fixture -- absence, not a bad page number."""
+    assert get_page("SUA", 2, substrate) == []
+
+
+def test_a_page_number_past_the_documents_last_page_is_reported(substrate):
+    """`SUA` runs 1-79 per the provenance sidecar; p.80 does not exist."""
+    with pytest.raises(UnknownPageError):
+        get_page("SUA", 80, substrate)
+
+
+def test_page_zero_is_reported_not_treated_as_empty(substrate):
+    with pytest.raises(UnknownPageError):
+        get_page("SUA", 0, substrate)
+
+
+def test_an_unknown_doc_is_reported(substrate):
+    with pytest.raises(UnknownPageError):
+        get_page("NOSUCHDOC", 1, substrate)

@@ -25,6 +25,18 @@ def test_header_mismatch_refuses_to_load(tmp_path):
         load_substrate(corpus_path=bad)
 
 
+def test_missing_provenance_sidecar_refuses_to_load(tmp_path):
+    """`corpus.tsv` alone is not enough -- `get_page` (#62) needs the sidecar's
+    page counts, so a corpus rebuilt without it must not load as though the
+    sidecar were optional."""
+    good = tmp_path / "corpus.tsv"
+    good.write_text(
+        "\t".join(COLUMNS) + "\nSUA:p1:1\tSUA\t1\t1\t\tsection_header\ttext\tnorm\n"
+    )
+    with pytest.raises(SubstrateError, match="missing substrate"):
+        load_substrate(corpus_path=good)
+
+
 def test_wrong_column_count_refuses_to_load(tmp_path):
     """A ragged row -- the exact shape an unescaped tab in `text` would produce
     (#33) -- must not be silently padded or truncated into a short corpus."""
@@ -88,3 +100,24 @@ def test_children_index_groups_by_parent_id(fixture_dir):
         substrate.by_id[child_id]["parent_id"] == "D128:p21:A.2.2"
         for child_id in substrate.children["D128:p21:A.2.2"]
     )
+
+
+def test_by_page_index_groups_by_doc_and_page_in_file_order(fixture_dir):
+    """The index `get_page` (#62) resolves through -- file order, because
+    `ingest` already sorted it into bbox reading order (#8)."""
+    substrate = load_substrate(corpus_path=fixture_dir / "corpus.tsv")
+    ids = substrate.by_page[("SUA", 76)]
+    assert ids[0] == "SUA:p76:B.1.1.1.3"
+    assert all(substrate.by_id[i]["doc"] == "SUA" for i in ids)
+    assert all(substrate.by_id[i]["page"] == 76 for i in ids)
+
+
+def test_doc_pages_is_the_provenance_sidecars_last_page_not_the_last_record(
+    fixture_dir,
+):
+    """`get_page` (#62) needs the document's true page count to tell "outside
+    the document" from "no records here" -- the fixture's SUA records stop at
+    p.76, but the sidecar (`corpus.provenance.tsv`) says SUA runs to p.79."""
+    substrate = load_substrate(corpus_path=fixture_dir / "corpus.tsv")
+    assert substrate.doc_pages == {"D128": 51, "DOG": 25, "SUA": 79}
+    assert max(r["page"] for r in substrate.records if r["doc"] == "SUA") < 79

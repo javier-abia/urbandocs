@@ -1,12 +1,13 @@
-"""The MCP transport adapter: `search`, `get` and `get_by_cite` exposed over
-streamable HTTP (#59, #60, #61).
+"""The MCP transport adapter: `search`, `get`, `get_by_cite` and `get_page`
+exposed over streamable HTTP (#59, #60, #61, #62).
 
 Holds no retrieval logic of its own -- `urbandocs.search.search`,
-`urbandocs.read.get` and `urbandocs.resolve.get_by_cite` are already complete
-(#56); this module's job is the wire. Loads the substrate once at startup,
-fail-loud (#38, #56), registers each operation as an MCP tool, and binds
-loopback-only with DNS-rebinding protection, since the engine authenticates
-nobody -- identity and attribution are the gateway's job (#43).
+`urbandocs.read.get`, `urbandocs.resolve.get_by_cite` and
+`urbandocs.read.get_page` are already complete (#56); this module's job is the
+wire. Loads the substrate once at startup, fail-loud (#38, #56), registers
+each operation as an MCP tool, and binds loopback-only with DNS-rebinding
+protection, since the engine authenticates nobody -- identity and attribution
+are the gateway's job (#43).
 
     uv run -m urbandocs.server
 
@@ -19,8 +20,9 @@ from __future__ import annotations
 from mcp.server import MCPServer
 from mcp.server.transport_security import TransportSecuritySettings
 
-from urbandocs.read import GetResponse
+from urbandocs.read import GetResponse, PageRecord
 from urbandocs.read import get as _get
+from urbandocs.read import get_page as _get_page
 from urbandocs.resolve import CiteCandidate
 from urbandocs.resolve import get_by_cite as _get_by_cite
 from urbandocs.search import RankedSection
@@ -80,6 +82,21 @@ GET_BY_CITE_DESCRIPTION = (
     "single document and survives the filter."
 )
 
+# States the no-range rule and why up front (#62): the cost of a range call is
+# invisible at the call site and unbounded once the corpus grows, so a long
+# article must be walked one page at a time rather than pulled in one call.
+GET_PAGE_DESCRIPTION = (
+    "Return every record on one PDF page, in reading order, each carrying its "
+    "id so anything spotted is immediately gettable via `get`. Off-loop: use it "
+    "when the ancestor chain does not reach context that sits beside a "
+    "provision on the page instead of above or below it. There is no page-range "
+    "parameter -- a provision spanning several pages is walked one page at a "
+    "time, on purpose, because a range call's token cost is invisible at the "
+    "call site and can be enormous (one article here spans 37 pages). A page "
+    "with no records returns an empty list; a page number outside the document "
+    "is an error, not a silent empty result."
+)
+
 
 def build_server(substrate: Substrate) -> MCPServer:
     """Register `search` against an already-loaded substrate.
@@ -100,6 +117,10 @@ def build_server(substrate: Substrate) -> MCPServer:
     @server.tool(description=GET_BY_CITE_DESCRIPTION)
     def get_by_cite(cite: str, doc: str | None = None) -> list[CiteCandidate]:
         return _get_by_cite(cite, substrate, doc)
+
+    @server.tool(description=GET_PAGE_DESCRIPTION)
+    def get_page(doc: str, page: int) -> list[PageRecord]:
+        return _get_page(doc, page, substrate)
 
     return server
 
