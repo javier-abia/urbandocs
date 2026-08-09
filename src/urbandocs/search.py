@@ -24,6 +24,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from urbandocs.ingest import normalize
+from urbandocs.substrate import ancestor_chain
 
 if TYPE_CHECKING:
     from urbandocs.substrate import Substrate
@@ -61,27 +62,6 @@ def _term_pattern(term: str) -> re.Pattern[str]:
     a `re.error` (#56).
     """
     return re.compile(r"\b" + re.escape(normalize(term)))
-
-
-def _ancestor_chain(section_id: str, substrate: Substrate) -> list[str]:
-    """Root-first ancestor text, the section itself excluded.
-
-    Walks `parent_id` to the root. `seen` guards a cycle the same way
-    `check_structure.py`'s invariant 7 does elsewhere -- the loader does not
-    itself forbid one, so a walk that trusted the chain to terminate could spin
-    forever on a corrupt substrate.
-    """
-    chain: list[str] = []
-    seen: set[str] = set()
-    cur = substrate.by_id.get(section_id)
-    while cur is not None and cur["parent_id"] and cur["parent_id"] not in seen:
-        seen.add(cur["parent_id"])
-        cur = substrate.by_id.get(cur["parent_id"])
-        if cur is None:
-            break
-        chain.append(cur["text"])
-    chain.reverse()
-    return chain
 
 
 def search(terms: list[str], substrate: Substrate) -> list[RankedSection]:
@@ -126,7 +106,7 @@ def search(terms: list[str], substrate: Substrate) -> list[RankedSection]:
             score=len(matched_slots),
             doc=section["doc"],
             page=section["page"],
-            ancestors=_ancestor_chain(section_id, substrate),
+            ancestors=ancestor_chain(section_id, substrate),
             section_id=section_id,
             matched_children=sorted(
                 matched_children.get(section_id, set()),

@@ -1,11 +1,13 @@
-"""The MCP transport adapter: `search` exposed over streamable HTTP (#59).
+"""The MCP transport adapter: `search` and `get` exposed over streamable HTTP
+(#59, #60).
 
 Holds no retrieval logic of its own -- `urbandocs.search.search` and
-`urbandocs.substrate.load_substrate` are already complete (#56); this
-module's job is the wire. Loads the substrate once at startup, fail-loud
-(#38, #56), registers `search` as the one MCP tool, and binds loopback-only
-with DNS-rebinding protection, since the engine authenticates nobody --
-identity and attribution are the gateway's job (#43).
+`urbandocs.read.get` are already complete without it (#56), same as
+`urbandocs.substrate.load_substrate`: this module's whole job is the wire. It
+loads the substrate once at startup, fail-loud (#38, #56's own contract),
+registers each operation as an MCP tool, and binds loopback-only with
+DNS-rebinding protection as the engine's only control (#43) -- the engine
+authenticates nobody; identity and attribution are the gateway's virtual keys.
 
     uv run -m urbandocs.server
 
@@ -18,6 +20,8 @@ from __future__ import annotations
 from mcp.server import MCPServer
 from mcp.server.transport_security import TransportSecuritySettings
 
+from urbandocs.read import GetResponse
+from urbandocs.read import get as _get
 from urbandocs.search import RankedSection
 from urbandocs.search import search as _search
 from urbandocs.substrate import Substrate, load_substrate
@@ -45,6 +49,22 @@ SEARCH_DESCRIPTION = (
     "the ids that matter to read it."
 )
 
+# Batching and the two failure shapes this operation must never produce,
+# stated up front rather than left implicit (#60): a batch that came back
+# short of what was asked, and a rule returned without the context that makes
+# it correct -- so the description names both the ancestor chain and the
+# children explicitly, not just "context".
+GET_DESCRIPTION = (
+    "Return verbatim legal text for one or more section or record ids from "
+    "`search`. Each result carries the record's own text, its full ancestor "
+    "heading chain up to the root, and its direct children -- never "
+    "grandchildren, never a sibling's subtree -- because a qualifier often "
+    "lives in the parent and the obligation it introduces often lives in the "
+    "children. Batch several ids in one call rather than calling once per id. "
+    "An id not found in the corpus is reported by itself and does not fail "
+    "the rest of the batch; a large batch is never truncated or refused."
+)
+
 
 def build_server(substrate: Substrate) -> MCPServer:
     """Register `search` against an already-loaded substrate.
@@ -57,6 +77,10 @@ def build_server(substrate: Substrate) -> MCPServer:
     @server.tool(description=SEARCH_DESCRIPTION)
     def search(terms: list[str]) -> list[RankedSection]:
         return _search(terms, substrate)
+
+    @server.tool(description=GET_DESCRIPTION)
+    def get(ids: list[str]) -> GetResponse:
+        return _get(ids, substrate)
 
     return server
 
