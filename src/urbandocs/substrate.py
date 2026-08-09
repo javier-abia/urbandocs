@@ -2,11 +2,10 @@
 
 Reads the file once, at process start (#56, #58) -- a rebuild is a restart, not
 a hot reload -- and builds the `by_id` index and the `parent_id` adjacency
-(`children`) that a children lookup needs. `search`'s own ancestor walk climbs
-`by_id` directly rather than `children`, which the future `get` (#56, #59) is
-the first consumer of; both indices are built here, once, so `load_substrate`
-stays the single place `corpus.tsv` is read. 2,455 records / 1.3 MB today;
-loading is cheap.
+(`children`) that a children lookup needs, plus `ancestor_chain`, the walk
+`search` and `get` (#56, #58, #60) both climb `by_id` for; both indices are
+built here, once, so `load_substrate` stays the single place `corpus.tsv` is
+read. 2,455 records / 1.3 MB today; loading is cheap.
 
 Never `csv.reader` (#33, #56): the substrate is plain TSV with no quoting, and
 the default dialect silently merges fields on a record that contains a `"` --
@@ -54,6 +53,29 @@ class Substrate:
     by_id: dict[str, Row]
     #: parent_id -> ids of its direct children, in file order.
     children: dict[str, list[str]]
+
+
+def ancestor_chain(record_id: str, substrate: Substrate) -> list[str]:
+    """Root-first ancestor text, the record itself excluded.
+
+    Shared by `search`'s section-line ancestors and `get`'s per-record
+    ancestors (#58, #60) -- one walk, because a bugfix to the cycle-guard
+    belongs in one place, not two. `seen` guards a cycle the same way
+    `check_structure.py`'s invariant 7 does elsewhere -- the loader does not
+    itself forbid one, so a walk that trusted the chain to terminate could spin
+    forever on a corrupt substrate.
+    """
+    chain: list[str] = []
+    seen: set[str] = set()
+    cur = substrate.by_id.get(record_id)
+    while cur is not None and cur["parent_id"] and cur["parent_id"] not in seen:
+        seen.add(cur["parent_id"])
+        cur = substrate.by_id.get(cur["parent_id"])
+        if cur is None:
+            break
+        chain.append(cur["text"])
+    chain.reverse()
+    return chain
 
 
 def _read_tsv_rows(path: Path, columns: list[str]) -> list[list[str]]:
