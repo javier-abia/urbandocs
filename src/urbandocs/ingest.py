@@ -76,7 +76,7 @@ class ProvRow(TypedDict):
     source: str
 
 
-DOCS = ["DccSUA", "DOG_2025", "dog-habitabilidad", "PGOM"]
+DOCS = ["DccSUA", "DOG_2025", "dog-habitabilidad", "PGOM", "DB-SI", "ley-suelo-galicia"]
 
 # Short code used in ids, hand-set because ids are read aloud in citations;
 # an unlisted doc falls back to its first three alphanumerics upper-cased.
