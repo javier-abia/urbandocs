@@ -13,8 +13,9 @@ dependency-free.
 
 ```bash
 cd tools/docling-convert
-uv run main.py --dst /tmp/staging          # convert every PDF in ../../documentos
-uv run main.py --force --dst /tmp/staging  # reconvert artifacts that already exist
+uv run main.py          # convert every PDF in ../../documentos, writing to
+                         # ../../documentos/documentos-docling/docling-tuned/
+uv run main.py --force  # reconvert artifacts that already exist
 ```
 
 Whether a document goes through OCR is decided by probing its text layer, not by

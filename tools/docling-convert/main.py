@@ -145,7 +145,7 @@ def convert(pdf, dst_dir, options, ocr, force):
 
 
 def main():
-    default_src = Path(__file__).resolve().parent.parent / "documentos"
+    default_src = Path(__file__).resolve().parent.parent.parent / "documentos"
 
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--src", type=Path, default=default_src)
