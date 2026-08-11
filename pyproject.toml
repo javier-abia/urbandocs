@@ -70,8 +70,10 @@ include = ["*.py", "*.pyi", "**/pyproject.toml"]
 # Gates are scoped to the engine package and its tests, deliberately (map #45).
 # `scripts/` holds nine research scripts that are frozen evidence for decisions
 # already made, not a maintained library; `tools/docling-convert/` resolves its
-# own ML toolchain separately and is not a workspace member (#46).
-extend-exclude = ["scripts", "tools"]
+# own ML toolchain separately and is not a workspace member (#46). `evals/`
+# is the same pattern (#85): its own `pyproject.toml`/`uv.lock`, resolved
+# independently, not part of these four gates.
+extend-exclude = ["scripts", "tools", "evals"]
 
 # Ruff's own default, and the width `ruff format` targets. The repo had no style
 # to preserve, so the tie breaks toward the number that needs no explanation.
