@@ -1,0 +1,21 @@
+set,number,question
+easy,1,¿Cuál es la longitud máxima del recorrido de evacuación cuando la planta solo tiene una salida, y qué excepciones hay para aparcamiento?
+easy,2,¿Qué altura mínima debe tener una barrera de protección cuando el desnivel que protege supera los 6 m?
+easy,3,¿Cuál es la altura libre mínima entre pavimento y techo acabado en una vivienda, y cuándo se puede reducir a 2,20 m?
+easy,4,¿Qué anchura y altura libre mínima exige el decreto de habitabilidad para las puertas de paso interiores?
+easy,5,"Art. 2 del PGOM — ¿cuándo entra en vigor el Plan General y cuánto dura su vigencia?"
+easy,6,Artículo 1 de la Ley del suelo de Galicia — ¿cuál es el objeto de la ley?
+easy,7,"En DB-SI, ¿cada cuántos metros de tramo horizontal necesitan los conductos de extracción de cocina un registro de inspección?"
+easy,8,¿Qué dimensiones mínimas exige el decreto de habitabilidad para la puerta de acceso al portal de un edificio?
+easy,9,"Art. 1 del PGOM — ¿a qué Plan General sustituye la Revisión y en qué término municipal es de aplicación obligatoria?"
+easy,10,"Según el resumen de alegaciones del DOG_2025, ¿qué porcentaje de las alegaciones al PGOM se referían a clasificación y calificación del suelo?"
+complex,1,"Tengo una vivienda con un patio de luces cuyo vuelo da a un desnivel de 7 m: ¿qué barrera exige DccSUA para el vuelo y qué retranqueo/vuelo permite el decreto de habitabilidad para ese mismo elemento (B.1.1/B.1.2)? ¿Son compatibles las dos normas para el mismo elemento constructivo?"
+complex,2,"Quiero cambiar de uso un local en planta baja a vivienda: ¿qué dice el Art. 16 del decreto de habitabilidad sobre excepcionalidad, y qué altura libre mínima aplica en ese cambio de uso frente a la regla general de 2,50 m?"
+complex,3,"Para una escalera de dos tramos que sirve de recorrido de evacuación, ¿qué anchura libre exige el decreto de habitabilidad, qué exige DB-SI para el mismo tramo como recorrido de evacuación, y qué exige DccSUA para que sea itinerario accesible? ¿Manda el mayor de los tres valores?"
+complex,4,"Una parcela está calificada con edificabilidad 1 m²/m² y altura máxima de ""bajo y una planta"" en el PGOM, con retranqueo mínimo de 3 m a linderos: ¿qué dice la Ley del suelo de Galicia (Título Preliminar) sobre la naturaleza vinculante de estos parámetros fijados por el planeamiento municipal?"
+complex,5,"El extracto ambiental del DOG_2025 describe el suelo residencial e industrial previsto en la revisión: ¿coincide esa clasificación con el texto normativo del PGOM para las mismas categorías de suelo, o hay matices entre el anuncio del DOG y la Normativa Urbanística?"
+complex,6,"Si amplío la superficie de una cocina según el punto A.3.2.1.d) del decreto de habitabilidad, ¿eso cambia su clasificación como local de riesgo especial en DB-SI, y qué exige entonces el conducto de extracción?"
+complex,7,"El Art. 3 del PGOM remite a la LSG 2/2016 para su interpretación normativa: ¿qué dice el Art. 3 de la Ley del suelo de Galicia sobre la actividad urbanística, y es coherente con la ""naturaleza y obligatoriedad"" que el PGOM se atribuye a sí mismo?"
+complex,8,"En un edificio de uso residencial con recorridos de evacuación de más de 25 m protegidos por más de una salida de planta, ¿qué anchura de puerta exige DB-SI en el recorrido y qué anchura de itinerario accesible exige DccSUA para el mismo pasillo — hay margen o coinciden en el mínimo?"
+complex,9,"El apartado de alegaciones del DOG_2025 dice que el 5,6 % de las alegaciones afectaron a la Normativa Urbanística: ¿qué artículos del PGOM regulan el propio procedimiento de modificación (Art. 6) y revisión (Art. 7) del Plan, y encajan con lo alegado?"
+complex,10,"El Art. 5 del PGOM enumera los documentos que integran su ""alcance normativo"": ¿la Memoria y los planos de información tienen el mismo valor vinculante que la propia Normativa Urbanística, o solo esta última es exigible frente a terceros?"
