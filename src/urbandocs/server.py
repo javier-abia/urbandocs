@@ -41,6 +41,12 @@ STREAMABLE_HTTP_PATH = "/mcp"
 # enforce either, so the calling agent has to be told sweep -> rank -> get ->
 # expand with one refine round, and that this engine never rules or verifies
 # completeness on its behalf.
+#
+# Also warns off corpus-wide terms: scoring counts distinct slots matched,
+# with no per-term weighting (search.py), so a term the whole corpus shares
+# inflates boilerplate sections for free. "Vigo" is the worst case measured
+# so far -- it also collides as a stem with "vigor" ("entrada en vigor"),
+# outranking the actually relevant section in a real query.
 SEARCH_DESCRIPTION = (
     "Sweep the whole normativa corpus for the given terms and return the "
     "complete ranked list of matching sections, never truncated. Submit "
@@ -49,7 +55,14 @@ SEARCH_DESCRIPTION = (
     '"anchura de puerta" as one term -- and submit each term as a stem '
     'rather than a full word: "anch" reaches both "ancho" and "anchura"; a '
     "full word reaches only the documents that happen to print that exact "
-    "form. A term matching nothing contributes nothing to the result; it is "
+    "form. Every term counts equally toward a section's score, so a term "
+    "the whole corpus shares -- the municipality's own name chief among "
+    "them, in a corpus that is that municipality's normativa -- matches "
+    "boilerplate as readily as the target and only dilutes the ranking; "
+    "leave it out. Because matching is stem-prefix, such a term can also "
+    'collide with an unrelated common word ("Vigo" reaches "vigor" too), '
+    "inflating the wrong section's score rather than the right one's. A "
+    "term matching nothing contributes nothing to the result; it is "
     "not an error. Synonyms may be added to a slot; terms already in the "
     "sweep may never be dropped on a refine round. Each returned section "
     "carries an address only -- "

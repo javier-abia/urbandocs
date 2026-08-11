@@ -47,14 +47,14 @@ repos:
       - id: end-of-file-fixer
         exclude: ^(documentos/|tests/fixtures/|LICENSE$)
 
-      # 3072 KB clears the largest committed artifact (`DccSUA.json`, 2044 KB)
-      # with headroom, rather than an allowlist that goes stale on the next
-      # re-conversion. Guards against the accident class: a source PDF force-
-      # added past .gitignore, a wheel from `.venv`, the derived `corpus/`.
-      # Only checks files being *added*, so re-converting a tracked docling
-      # artifact never trips it.
+      # 10240 KB clears the largest committed artifact (`PGOM.json`, 7710 KB,
+      # 350 pages) with headroom, rather than an allowlist that goes stale on
+      # the next re-conversion. Guards against the accident class: a source
+      # PDF force-added past .gitignore, a wheel from `.venv`, the derived
+      # `corpus/`. Only checks files being *added*, so re-converting a
+      # tracked docling artifact never trips it.
       - id: check-added-large-files
-        args: ["--maxkb=3072"]
+        args: ["--maxkb=10240"]
 
   # --------------------------------------------------------------------------
   # Secret scan
