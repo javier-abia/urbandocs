@@ -25,6 +25,20 @@ def _require(name: str) -> str:
 
 
 DEFAULT_MAX_REQUESTS = 50  # matches pydantic-ai's own UsageLimits default
+DEFAULT_DATASET_NAME = "urbandocs-gold-set"
+
+
+def dataset_name_from_env() -> str:
+    """The one place `LANGSMITH_DATASET` is read.
+
+    Shared by `Config.from_env` (the `run` command) and `cli.py`'s
+    `upload-dataset` command -- `upload-dataset` used to carry its own
+    hardcoded argparse default, which silently ignored `LANGSMITH_DATASET`
+    in `.env` and left `upload-dataset` and `run` pointed at two different
+    datasets whenever the env var was set without also passing
+    `--dataset-name` explicitly.
+    """
+    return os.environ.get("LANGSMITH_DATASET", DEFAULT_DATASET_NAME).strip()
 
 
 @dataclass(frozen=True)
@@ -68,9 +82,7 @@ class Config:
         # key fails before any model or MCP call runs, not partway through.
         _require("LANGSMITH_API_KEY")
 
-        langsmith_dataset = os.environ.get(
-            "LANGSMITH_DATASET", "urbandocs-gold-set"
-        ).strip()
+        langsmith_dataset = dataset_name_from_env()
 
         # "Runs until it produces a final prose answer with citations, or
         # stops" (#85) -- the "or stops" half needs an enforced cap, since
