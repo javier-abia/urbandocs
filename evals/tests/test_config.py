@@ -1,6 +1,6 @@
 import pytest
 
-from urbandocs_evals.config import Config, ConfigError
+from urbandocs_evals.config import Config, ConfigError, dataset_name_from_env
 
 REQUIRED_ENV = {
     "LITELLM_BASE_URL": "https://litellm.example/v1",
@@ -56,3 +56,17 @@ def test_from_env_max_requests_override(monkeypatch: pytest.MonkeyPatch) -> None
     _set_env(monkeypatch, EVAL_MAX_REQUESTS="10")
     cfg = Config.from_env()
     assert cfg.max_requests == 10
+
+
+def test_dataset_name_from_env_matches_config_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    # `run` (via `Config.from_env`) and `upload-dataset` (via this function
+    # directly) must agree on which dataset they mean when only
+    # LANGSMITH_DATASET is set -- a prior bug had `upload-dataset` carry its
+    # own hardcoded argparse default that ignored this env var entirely.
+    monkeypatch.delenv("LANGSMITH_DATASET", raising=False)
+    assert dataset_name_from_env() == "urbandocs-gold-set"
+
+    monkeypatch.setenv("LANGSMITH_DATASET", "my-custom-set")
+    assert dataset_name_from_env() == "my-custom-set"
+    _set_env(monkeypatch, LANGSMITH_DATASET="my-custom-set")
+    assert Config.from_env().langsmith_dataset == dataset_name_from_env()

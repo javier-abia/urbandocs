@@ -10,7 +10,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 from langsmith import Client
 
-from urbandocs_evals.config import Config, ConfigError
+from urbandocs_evals.config import Config, ConfigError, dataset_name_from_env
 from urbandocs_evals.dataset import upload_dataset
 from urbandocs_evals.run import run_experiment
 
@@ -19,7 +19,10 @@ DOCS_DIR = Path(__file__).resolve().parents[3] / "docs"
 
 def _cmd_upload_dataset(args: argparse.Namespace) -> int:
     client = Client()
-    dataset_name = args.dataset_name
+    # `--dataset-name` wins if passed; otherwise falls back to the same
+    # `LANGSMITH_DATASET` env var `run` reads via `Config.from_env`, so the
+    # two commands never point at different datasets by accident.
+    dataset_name = args.dataset_name or dataset_name_from_env()
     message = upload_dataset(client, dataset_name, args.docs_dir, recreate=args.recreate)
     print(message)
     return 0
@@ -53,8 +56,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     upload.add_argument(
         "--dataset-name",
-        default="urbandocs-gold-set",
-        help="LangSmith dataset name (default: urbandocs-gold-set)",
+        default=None,
+        help=(
+            "LangSmith dataset name (default: $LANGSMITH_DATASET, "
+            "falling back to urbandocs-gold-set)"
+        ),
     )
     upload.add_argument(
         "--recreate",
