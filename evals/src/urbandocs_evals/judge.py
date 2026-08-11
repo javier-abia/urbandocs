@@ -32,7 +32,18 @@ JUDGE_SYSTEM_PROMPT = (
     "fluent, correct-sounding answer that is missing a citation, or cites "
     "the wrong provision, is a FAIL. Judge only what's in front of you -- "
     "do not reward an answer for being plausible if it isn't grounded the "
-    "way the gold answer is."
+    "way the gold answer is.\n\n"
+    "The gold `sources` column names each document by the filename of its "
+    "human-readable draft (e.g. `dog-habitabilidad.md`, `DB-SI.md`). The "
+    "candidate agent never sees those filenames -- it cites the same "
+    "documents by the short code the production corpus mints for them. "
+    "Both name the same document; treat them as equivalent when checking "
+    "citation coverage:\n"
+    "  D128 = dog-habitabilidad   DBS = DB-SI      SUA = DccSUA\n"
+    "  DOG  = DOG_2025            LEY = ley-suelo-galicia   PGO = PGOM\n"
+    "A candidate citing `D128:p31:§A.3.2.3.c` for a gold source of "
+    "`dog-habitabilidad.md:1141` has covered that source -- do not fail an "
+    "answer solely because it used the short code instead of the filename."
 )
 
 
