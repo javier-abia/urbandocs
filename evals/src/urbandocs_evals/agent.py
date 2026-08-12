@@ -90,7 +90,8 @@ async def answer_question(
     zeroed usage rather than raising -- the judge already fails it on
     content alone. Wall-clock is timed around the call itself; token counts
     and `RunUsage.tool_calls` (#84's step count -- pydantic-ai's own count of
-    successful tool calls) come straight off `RunResult.usage()`.
+    successful tool calls) come straight off `RunResult.usage` -- a
+    property in pydantic-ai 2.27.1, not a method.
     """
     start = time.monotonic()
     try:
@@ -106,6 +107,6 @@ async def answer_question(
         )
     return AnswerResult(
         answer=result.output,
-        usage=result.usage(),
+        usage=result.usage,
         elapsed_seconds=time.monotonic() - start,
     )
