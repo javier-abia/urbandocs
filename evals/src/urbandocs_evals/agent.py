@@ -17,11 +17,14 @@ technical architect and must ground every claim in a citation.
 
 from __future__ import annotations
 
+import time
+from dataclasses import dataclass
+
 from pydantic_ai import Agent, UsageLimitExceeded
 from pydantic_ai.mcp import MCPToolset
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openai import OpenAIProvider
-from pydantic_ai.usage import UsageLimits
+from pydantic_ai.usage import RunUsage, UsageLimits
 
 from urbandocs_evals.config import Config
 
@@ -67,19 +70,42 @@ def build_agent(cfg: Config) -> Agent[None, str]:
     )
 
 
-async def answer_question(agent: Agent[None, str], question: str, *, max_requests: int) -> str:
-    """Run the agent to completion and return its final prose answer.
+@dataclass
+class AnswerResult:
+    """An answered question plus the run metrics #84 records alongside it."""
+
+    answer: str
+    usage: RunUsage
+    elapsed_seconds: float
+
+
+async def answer_question(
+    agent: Agent[None, str], question: str, *, max_requests: int
+) -> AnswerResult:
+    """Run the agent to completion and return its answer plus run metrics.
 
     "Runs until it produces a final prose answer with citations, or stops"
     (#85) -- `max_requests` is the enforced cap for that second case. A run
-    that hits it produces no answer to grade, so it's reported as a stalled
-    run rather than raised, and the judge fails it on content alone.
+    that hits it produces no `RunResult` to read usage from, so it reports
+    zeroed usage rather than raising -- the judge already fails it on
+    content alone. Wall-clock is timed around the call itself; token counts
+    and `RunUsage.tool_calls` (#84's step count -- pydantic-ai's own count of
+    successful tool calls) come straight off `RunResult.usage()`.
     """
+    start = time.monotonic()
     try:
         result = await agent.run(question, usage_limits=UsageLimits(request_limit=max_requests))
     except UsageLimitExceeded:
-        return (
-            f"[stopped: exceeded {max_requests} model requests without producing "
-            "a final answer]"
+        return AnswerResult(
+            answer=(
+                f"[stopped: exceeded {max_requests} model requests without producing "
+                "a final answer]"
+            ),
+            usage=RunUsage(),
+            elapsed_seconds=time.monotonic() - start,
         )
-    return result.output
+    return AnswerResult(
+        answer=result.output,
+        usage=result.usage(),
+        elapsed_seconds=time.monotonic() - start,
+    )

@@ -8,6 +8,9 @@ pass rate is comparable run-over-run through the LangSmith UI rather than a
 local log the next run overwrites. When the judge flags a wrong extra claim
 the candidate volunteered, that's a second, separate `extra_claim` feedback
 key -- informational for spot-checking, it never changes `correctness`.
+`metrics_evaluator` records #84's latency/token-usage/step-count benchmarks
+as three more feedback keys, off the same run -- no second model call, just
+surfacing what `target` already measured.
 """
 
 from __future__ import annotations
@@ -39,6 +42,21 @@ def _select_examples(
     return client.list_examples(dataset_name=dataset_name, metadata={"set": question_set})
 
 
+def _metrics_results(outputs: dict[str, Any]) -> list[dict[str, Any]]:
+    """The #84 feedback rows for one run's `target` outputs.
+
+    Pulled out of `metrics_evaluator` so the mapping is unit-testable without
+    a `Run` object -- `target` already put these fields there, this just
+    names them as LangSmith feedback keys.
+    """
+    return [
+        {"key": "latency_seconds", "score": outputs.get("latency_seconds")},
+        {"key": "input_tokens", "score": outputs.get("input_tokens")},
+        {"key": "output_tokens", "score": outputs.get("output_tokens")},
+        {"key": "step_count", "score": outputs.get("tool_calls")},
+    ]
+
+
 async def run_experiment(
     cfg: Config,
     client: Client,
@@ -49,13 +67,19 @@ async def run_experiment(
 ) -> Any:
     judge = build_judge(cfg)
 
-    async def target(inputs: dict[str, str]) -> dict[str, str]:
+    async def target(inputs: dict[str, str]) -> dict[str, Any]:
         # A fresh agent (and fresh MCP session) per question -- simplest
         # thing that is safe under concurrency; 20 questions makes the
         # reconnect cost a non-issue.
         agent = build_agent(cfg)
-        answer = await answer_question(agent, inputs["question"], max_requests=cfg.max_requests)
-        return {"answer": answer}
+        result = await answer_question(agent, inputs["question"], max_requests=cfg.max_requests)
+        return {
+            "answer": result.answer,
+            "latency_seconds": result.elapsed_seconds,
+            "input_tokens": result.usage.input_tokens,
+            "output_tokens": result.usage.output_tokens,
+            "tool_calls": result.usage.tool_calls,
+        }
 
     async def judge_evaluator(run: Run, example: Example | None) -> dict[str, Any]:
         if example is None:
@@ -82,10 +106,15 @@ async def run_experiment(
             )
         return {"results": results}
 
+    def metrics_evaluator(run: Run, example: Example | None) -> dict[str, Any]:
+        # #84: latency/token-usage/step-count, alongside `correctness` on the
+        # same run -- `target` already computed these, so no LLM call here.
+        return {"results": _metrics_results(run.outputs or {})}
+
     return await aevaluate(
         target,
         data=_select_examples(client, cfg.langsmith_dataset, question_set),
-        evaluators=[judge_evaluator],
+        evaluators=[judge_evaluator, metrics_evaluator],
         experiment_prefix=experiment_prefix,
         max_concurrency=concurrency,
         client=client,
