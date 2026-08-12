@@ -68,7 +68,16 @@ Manual, on demand — no CI wiring (#85's scope; this repo has no CI/CD
 pipeline and deploys are already manual). `--concurrency N` runs more than
 one question at a time (default 1: sequential, simplest thing that's safe
 against a fresh MCP session per question); `--experiment-prefix` names the
-run in LangSmith.
+run in LangSmith; `--set {easy,complex}` runs only that tier (default: the
+whole gold set). One Dataset either way — `--set` filters by each
+example's `set` metadata rather than pointing at a second Dataset, so
+pass rate stays comparable across easy-only, complex-only and full runs
+in the same LangSmith UI:
+
+```sh
+uv run urbandocs-evals run --set easy
+uv run urbandocs-evals run --set complex
+```
 
 Judge verdicts are **spot-checked by the owner**, not read exhaustively for
 every run (#85) — that's the tradeoff for being able to re-run this often.
