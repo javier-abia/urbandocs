@@ -37,6 +37,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
             client,
             concurrency=args.concurrency,
             experiment_prefix=args.experiment_prefix,
+            question_set=args.set,
         )
     )
     print(f"experiment done: {results}")
@@ -79,6 +80,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--experiment-prefix",
         default="urbandocs-eval",
         help="LangSmith experiment name prefix (default: urbandocs-eval)",
+    )
+    run.add_argument(
+        "--set",
+        choices=["easy", "complex"],
+        default=None,
+        help="run only this question set (default: the whole gold set)",
     )
     run.set_defaults(func=_cmd_run)
 

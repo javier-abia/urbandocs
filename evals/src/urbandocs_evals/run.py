@@ -9,6 +9,7 @@ through the LangSmith UI rather than a local log the next run overwrites.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from typing import Any
 
 from langsmith import Client
@@ -20,12 +21,28 @@ from urbandocs_evals.config import Config
 from urbandocs_evals.judge import GradingInputs, build_judge, grade
 
 
+def _select_examples(
+    client: Client, dataset_name: str, question_set: str | None
+) -> str | Iterable[Example]:
+    """`aevaluate`'s `data` -- the whole Dataset by name, or one `set` from it.
+
+    Filters on each example's `metadata={"set": ...}` (set by
+    `upload_dataset`) instead of maintaining a second Dataset, so an
+    easy-only or complex-only run's pass rate stays comparable, in the same
+    LangSmith UI, to a run against the whole gold set.
+    """
+    if question_set is None:
+        return dataset_name
+    return client.list_examples(dataset_name=dataset_name, metadata={"set": question_set})
+
+
 async def run_experiment(
     cfg: Config,
     client: Client,
     *,
     concurrency: int = 1,
     experiment_prefix: str = "urbandocs-eval",
+    question_set: str | None = None,
 ) -> Any:
     judge = build_judge(cfg)
 
@@ -59,7 +76,7 @@ async def run_experiment(
 
     return await aevaluate(
         target,
-        data=cfg.langsmith_dataset,
+        data=_select_examples(client, cfg.langsmith_dataset, question_set),
         evaluators=[judge_evaluator],
         experiment_prefix=experiment_prefix,
         max_concurrency=concurrency,
