@@ -47,12 +47,16 @@ def _metrics_results(outputs: dict[str, Any]) -> list[dict[str, Any]]:
 
     Pulled out of `metrics_evaluator` so the mapping is unit-testable without
     a `Run` object -- `target` already put these fields there, this just
-    names them as LangSmith feedback keys.
+    names them as LangSmith feedback keys. Token counts ride on `value`, not
+    `score`: LangSmith rejects a feedback `score` outside
+    +-99999.9999 (422 on ingest), a bound a sweep-heavy question's prompt
+    tokens clear in practice. `latency_seconds`/`step_count` stay on `score`
+    since nothing in this harness gets near that ceiling for either.
     """
     return [
         {"key": "latency_seconds", "score": outputs.get("latency_seconds")},
-        {"key": "input_tokens", "score": outputs.get("input_tokens")},
-        {"key": "output_tokens", "score": outputs.get("output_tokens")},
+        {"key": "input_tokens", "value": outputs.get("input_tokens")},
+        {"key": "output_tokens", "value": outputs.get("output_tokens")},
         {"key": "step_count", "score": outputs.get("tool_calls")},
     ]
 
