@@ -3,8 +3,10 @@
 A second, different model from the one under test grades each answer against
 the gold `answer` and `sources` columns, to avoid self-preference bias
 (`Config.from_env` refuses to build a harness where they're the same model).
-PASS requires **both** content match and citation coverage -- a fluent
-answer missing or misciting its source is a FAIL, never a partial score.
+PASS requires content match, citation coverage, AND that anything the
+candidate volunteers beyond the gold answer isn't wrong -- a fluent answer
+missing or misciting its source, or padding a correct core answer with a
+wrong extra claim, is a FAIL, never a partial score.
 """
 
 from __future__ import annotations
@@ -21,18 +23,28 @@ JUDGE_SYSTEM_PROMPT = (
     "You are grading one answer from a normativa search agent against a "
     "human-written gold answer, pass/fail, all-or-nothing. There is no "
     "partial credit: a rule returned without its qualifier is not 80% "
-    "correct, it is incorrect. PASS requires BOTH of the following: "
+    "correct, it is incorrect. PASS requires ALL of the following: "
     "(1) the candidate answer's content matches the gold answer's -- same "
     "governing rule(s), same figures, same qualifiers and exceptions, "
-    "not just a similar-sounding answer; and (2) the candidate answer's "
+    "not just a similar-sounding answer; (2) the candidate answer's "
     "cited sources cover the gold `sources` -- every document/article the "
     "gold answer cites must be identifiable in the candidate's own "
     "citations (exact page numbers need not match verbatim, but the "
-    "document and provision must be traceable to the gold source). A "
-    "fluent, correct-sounding answer that is missing a citation, or cites "
-    "the wrong provision, is a FAIL. Judge only what's in front of you -- "
-    "do not reward an answer for being plausible if it isn't grounded the "
-    "way the gold answer is.\n\n"
+    "document and provision must be traceable to the gold source); and "
+    "(3) anything the candidate adds beyond the gold answer is not wrong. "
+    "An architect relies on every sentence in the answer, not just the part "
+    "that overlaps the gold answer -- a correct core answer padded with an "
+    "extra figure, exception, or qualifier that contradicts the gold answer, "
+    "or is an unsupported fabrication, is a FAIL even though the core "
+    "content and citations pass. Only fail on extra material you can "
+    "actually identify as wrong or contradictory, not on detail that is "
+    "merely unverifiable from what's in front of you -- an answer is not "
+    "penalized for volunteering something plausible that the gold answer "
+    "simply doesn't mention. A fluent, correct-sounding answer that is "
+    "missing a citation, cites the wrong provision, or volunteers a wrong "
+    "extra claim, is a FAIL. Judge only what's in front of you -- do not "
+    "reward an answer for being plausible if it isn't grounded the way the "
+    "gold answer is.\n\n"
     "The gold `sources` column names each document by the filename of its "
     "human-readable draft (e.g. `dog-habitabilidad.md`, `DB-SI.md`). The "
     "candidate agent never sees those filenames -- it cites the same "
@@ -48,8 +60,13 @@ JUDGE_SYSTEM_PROMPT = (
 
 
 class Verdict(BaseModel):
-    passed: bool = Field(description="True only if both content and citation coverage pass.")
-    reasoning: str = Field(description="One or two sentences: why, citing what was missing if it failed.")
+    passed: bool = Field(
+        description="True only if content match, citation coverage, and extra-claim "
+        "correctness all pass."
+    )
+    reasoning: str = Field(
+        description="One or two sentences: why, citing what was missing or wrong if it failed."
+    )
 
 
 def build_judge(cfg: Config) -> Agent[None, Verdict]:

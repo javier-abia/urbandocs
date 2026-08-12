@@ -8,7 +8,9 @@ actual MCP client — no mocking — driven the way the tool descriptions
 instruct. Model calls go through **LiteLLM** on a dedicated eval virtual key,
 isolated from production traffic/spend. A second, different model grades
 each answer pass/fail, all-or-nothing, against the gold answer and its
-required citations. Every run is a **LangSmith Experiment** against a
+required citations -- and fails an answer that pads a correct core answer
+with a wrong extra claim, not just one that gets the core answer wrong.
+Every run is a **LangSmith Experiment** against a
 **LangSmith Dataset** built from the gold set, so pass rate is comparable
 run-over-run through the LangSmith UI.
 
