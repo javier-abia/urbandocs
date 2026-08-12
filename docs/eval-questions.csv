@@ -1,4 +1,14 @@
 set,number,question
+easy,1,¿Cuál es la longitud máxima del recorrido de evacuación cuando la planta solo tiene una salida, y qué excepciones hay para aparcamiento?
+easy,2,¿Qué altura mínima debe tener una barrera de protección cuando el desnivel que protege supera los 6 m?
+easy,3,¿Cuál es la altura libre mínima entre pavimento y techo acabado en una vivienda, y cuándo se puede reducir a 2,20 m?
+easy,4,¿Qué anchura y altura libre mínima debe tener una puerta de paso interior en una vivienda?
+easy,5,¿Cuándo entra en vigor el Plan General de Vigo y cuánto dura su vigencia una vez aprobado?
+easy,6,¿Cuál es el objeto de la normativa autonómica del suelo en Galicia y qué regula?
+easy,7,¿Cada cuántos metros de tramo horizontal necesita un conducto de extracción de humos de cocina un registro de inspección?
+easy,8,¿Qué dimensiones mínimas debe tener la puerta de acceso al portal de un edificio de viviendas?
+easy,9,La revisión del planeamiento general de Vigo -- ¿a qué Plan General anterior sustituye y en qué término municipal es de aplicación obligatoria?
+easy,10,"De las alegaciones presentadas a la revisión del Plan General de Vigo, ¿qué porcentaje se referían a la clasificación y calificación del suelo?"
 complex,1,"Tengo una vivienda con un patio de luces cuyo vuelo da a un desnivel de 7 m: ¿qué barrera de protección se exige para ese vuelo, y qué retranqueo o vuelo permite la normativa de habitabilidad para ese mismo elemento? ¿Son compatibles ambas exigencias para el mismo elemento constructivo?"
 complex,2,"Quiero cambiar de uso un local en planta baja a vivienda: ¿en qué casos se admite una excepción a las condiciones normales de habitabilidad, y qué altura libre mínima aplicaría en ese cambio de uso frente a la regla general de 2,50 m?"
 complex,3,"Para una escalera de dos tramos que sirve de recorrido de evacuación, ¿qué anchura libre exige la normativa de habitabilidad, qué exige la normativa de protección contra incendios para ese mismo tramo como recorrido de evacuación, y qué exige la normativa de accesibilidad para que sea itinerario accesible? ¿Manda siempre el mayor de los tres valores?"
