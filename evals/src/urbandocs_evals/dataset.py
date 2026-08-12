@@ -106,9 +106,8 @@ def upload_dataset(
         description=(
             "urbandocs gold set (#30): 20 normativa questions, each with a "
             "human-judged answer and its required citations. PASS is "
-            "all-or-nothing -- content matches, every cited source is "
-            "covered, and nothing volunteered beyond the gold answer is "
-            "wrong, per #85."
+            "all-or-nothing -- content matches AND every cited source is "
+            "covered, per #85."
         ),
     )
     client.create_examples(

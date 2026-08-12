@@ -2,9 +2,12 @@
 
 One `aevaluate` call: `target` drives a fresh agent through the real MCP
 loop for each question, `judge_evaluator` grades the resulting answer
-pass/fail against that question's gold answer and sources. Each call is
-its own LangSmith Experiment, so pass rate is comparable run-over-run
-through the LangSmith UI rather than a local log the next run overwrites.
+pass/fail against that question's gold answer and sources, as the
+`correctness` feedback key. Each call is its own LangSmith Experiment, so
+pass rate is comparable run-over-run through the LangSmith UI rather than a
+local log the next run overwrites. When the judge flags a wrong extra claim
+the candidate volunteered, that's a second, separate `extra_claim` feedback
+key -- informational for spot-checking, it never changes `correctness`.
 """
 
 from __future__ import annotations
@@ -68,11 +71,16 @@ async def run_experiment(
                 gold_sources=reference.get("sources", ""),
             ),
         )
-        return {
-            "key": "correctness",
-            "score": verdict.passed,
-            "comment": verdict.reasoning,
-        }
+        results: list[dict[str, Any]] = [
+            {"key": "correctness", "score": verdict.passed, "comment": verdict.reasoning}
+        ]
+        if verdict.extra_claim_note:
+            # Informational only -- flagged for the owner's spot-check, never
+            # folded into `correctness`/`passed`.
+            results.append(
+                {"key": "extra_claim", "score": False, "comment": verdict.extra_claim_note}
+            )
+        return {"results": results}
 
     return await aevaluate(
         target,
