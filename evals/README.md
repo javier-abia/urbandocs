@@ -12,7 +12,12 @@ required citations; it separately flags (without affecting pass/fail) any
 wrong extra claim the candidate volunteers beyond the gold answer, for
 spot-checking. Every run is a **LangSmith Experiment** against a
 **LangSmith Dataset** built from the gold set, so pass rate is comparable
-run-over-run through the LangSmith UI.
+run-over-run through the LangSmith UI, alongside three more per-question
+feedback keys (#84): wall-clock **latency**, **input/output token usage**
+(`RunResult.usage()`), and **step count** (`RunUsage.tool_calls`, the
+number of tool calls before a final answer). These stay observational —
+they don't gate `correctness` — so a change can be judged on more than
+pass/fail.
 
 Self-contained project, own `pyproject.toml`/`uv.lock`, same pattern as
 `tools/docling-convert/` — resolved independently of the root project, not
@@ -90,8 +95,6 @@ In scope: one fixed model under test, the model LiteLLM's production config
 actually runs — this is not a model-comparison matrix. Out of scope, and
 tracked separately:
 
-- Latency / token-usage / step-count benchmarks — #84, blocked by this
-  ticket, extends these same runs once they exist.
 - Wiring LiteLLM's own production traffic into LangSmith tracing —
   `docs/ops/deploy-runbook.md`'s deferred work, unrelated to this harness's
   own tracing (each `run` call already produces one LangSmith Experiment).

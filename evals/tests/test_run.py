@@ -1,4 +1,4 @@
-from urbandocs_evals.run import _select_examples
+from urbandocs_evals.run import _metrics_results, _select_examples
 
 
 class _RecordingClient:
@@ -22,3 +22,44 @@ def test_set_filters_by_metadata() -> None:
     result = _select_examples(client, "urbandocs-gold-set", "easy")  # type: ignore[arg-type]
     assert result == "filtered-examples"
     assert client.calls == [("urbandocs-gold-set", {"set": "easy"})]
+
+
+def test_metrics_results_names_targets_outputs_as_feedback_keys() -> None:
+    outputs = {
+        "answer": "irrelevant here",
+        "latency_seconds": 4.5,
+        "input_tokens": 1200,
+        "output_tokens": 80,
+        "tool_calls": 3,
+    }
+    assert _metrics_results(outputs) == [
+        {"key": "latency_seconds", "score": 4.5},
+        {"key": "input_tokens", "value": 1200},
+        {"key": "output_tokens", "value": 80},
+        {"key": "step_count", "score": 3},
+    ]
+
+
+def test_metrics_results_token_counts_ride_value_not_score() -> None:
+    # LangSmith rejects a feedback `score` outside +-99999.9999 (422 on
+    # ingest) -- a bound real prompt-token counts clear routinely, so token
+    # counts must never land on `score`.
+    big = {"input_tokens": 160_838, "output_tokens": 149_105}
+    results = _metrics_results(big)
+    by_key = {r["key"]: r for r in results}
+    assert by_key["input_tokens"] == {"key": "input_tokens", "value": 160_838}
+    assert by_key["output_tokens"] == {"key": "output_tokens", "value": 149_105}
+    assert "score" not in by_key["input_tokens"]
+    assert "score" not in by_key["output_tokens"]
+
+
+def test_metrics_results_tolerates_missing_outputs() -> None:
+    # A stalled run's `target` output still has these keys (#84's
+    # zeroed-usage case), but the evaluator itself must not raise on a
+    # `Run.outputs` shaped some other way.
+    assert _metrics_results({}) == [
+        {"key": "latency_seconds", "score": None},
+        {"key": "input_tokens", "value": None},
+        {"key": "output_tokens", "value": None},
+        {"key": "step_count", "score": None},
+    ]
