@@ -44,28 +44,45 @@ STREAMABLE_HTTP_PATH = "/mcp"
 # expand with one refine round, and that this engine never rules or verifies
 # completeness on its behalf.
 #
-# Also warns off corpus-wide terms: scoring counts distinct slots matched,
-# with no per-term weighting (search.py), so a term the whole corpus shares
-# inflates boilerplate sections for free. "Vigo" is the worst case measured
-# so far -- it also collides as a stem with "vigor" ("entrada en vigor"),
-# outranking the actually relevant section in a real query.
+# Also states the general cost mechanism and named failure shapes of it
+# (#88): matching unions across terms and is never truncated, so every term
+# is pure marginal cost -- one term per necessary content word, nothing
+# extra "to be safe". Named cases: the municipality's own name ("Vigo",
+# which also collides as a stem with "vigor" -- "entrada en vigor"), a
+# stem shortened past a 3-character floor, and bare numbers, excluded
+# outright -- stem-prefix-matches any longer number sharing its digits
+# (page and article numbers included), never just the value asked about,
+# so they are never worth their cost. All three over-reach the same way
+# an optional term does, just by matching too much rather than by being
+# unnecessary.
 SEARCH_DESCRIPTION = (
     "Sweep the whole normativa corpus for the given terms and return the "
     "complete ranked list of matching sections, never truncated. Submit "
     "every content word of the question as its own term -- entity and "
     'attribute searched separately, e.g. "anchura" and "puerta", never '
-    '"anchura de puerta" as one term -- and submit each term as a stem '
-    'rather than a full word: "anch" reaches both "ancho" and "anchura"; a '
-    "full word reaches only the documents that happen to print that exact "
-    "form. Every term counts equally toward a section's score, so a term "
-    "the whole corpus shares -- the municipality's own name chief among "
-    "them, in a corpus that is that municipality's normativa -- matches "
-    "boilerplate as readily as the target and only dilutes the ranking; "
-    "leave it out. Because matching is stem-prefix, such a term can also "
-    'collide with an unrelated common word ("Vigo" reaches "vigor" too), '
-    "inflating the wrong section's score rather than the right one's. A "
-    "term matching nothing contributes nothing to the result; it is "
-    "not an error. Synonyms may be added to a slot; terms already in the "
+    '"anchura de puerta" as one term -- and submit each term as a stem, '
+    'never shorter than 3 characters: "anch" reaches both "ancho" and '
+    '"anchura", but stemming past that floor -- "m" from "metros" or '
+    '"mínima" -- stem-matches most of the corpus and adds nothing a longer '
+    "stem would not already reach. Leave out bare numbers entirely: "
+    'stem-prefix matching means "6" reaches "6", "60", "6.1", "6º" and any '
+    "other numeric string sharing that prefix -- page numbers, article "
+    "numbers, and unrelated measurements, never just the value the "
+    "question asked about -- so a number is never worth submitting on its "
+    "own. Matching unions across terms and the "
+    "result is never truncated, so an added term can only grow the result, "
+    "never shrink it: submit exactly one term per necessary content word "
+    'and stop -- no optional or "just in case" terms, since each one is '
+    "pure marginal cost with no filtering benefit. Every term counts "
+    "equally toward a section's score, so a term the whole corpus shares "
+    "-- the municipality's own name chief among them, in a corpus that is "
+    "that municipality's normativa -- matches boilerplate as readily as "
+    "the target and only dilutes the ranking; leave it out. Because matching "
+    "is stem-prefix, such a term can also collide with an unrelated common "
+    'word ("Vigo" reaches "vigor" too), inflating the wrong section\'s score '
+    "rather than the right one's. A term matching nothing contributes "
+    "nothing to the result; it is not an error. Synonyms may be added to a "
+    "slot; terms already in the "
     "sweep may never be dropped on a refine round. Each returned section "
     "carries an address only -- "
     "document, PDF page, ancestor heading chain, section id, and "
