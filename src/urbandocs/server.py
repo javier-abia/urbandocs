@@ -17,6 +17,8 @@ LiteLLM on the same box is the only caller.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from mcp.server import MCPServer
 from mcp.server.transport_security import TransportSecuritySettings
 
@@ -66,9 +68,13 @@ SEARCH_DESCRIPTION = (
     "not an error. Synonyms may be added to a slot; terms already in the "
     "sweep may never be dropped on a refine round. Each returned section "
     "carries an address only -- "
-    "document, PDF page, full ancestor heading chain, section id, and "
+    "document, PDF page, ancestor heading chain, section id, and "
     "matched child ids -- never the provision's legal text; call `get` on "
-    "the ids that matter to read it. This is the first step of a fixed loop: "
+    "the ids that matter to read it. The ancestor chain is not repeated in "
+    "full on every section: the result carries one `ancestors` pool of "
+    "unique heading strings, and each section's `ancestor_ids` are "
+    "root-first indices into it -- look each one up to read the section's "
+    "full chain. This is the first step of a fixed loop: "
     "sweep here, rank arrives pre-sorted, `get` the sections that matter, "
     "then expand by following at most one in-corpus pointer via `get_by_cite` "
     "and search again if it opens a new question -- one refine round, not a "
@@ -129,6 +135,65 @@ GET_PAGE_DESCRIPTION = (
 )
 
 
+@dataclass(frozen=True)
+class WireSection:
+    """One `RankedSection`, its ancestor chain replaced by indices into the
+    sibling `SearchResponse.ancestors` pool (#87). Everything else is
+    unchanged from `RankedSection` -- this is a wire-only re-encoding, not a
+    change to what `search` ranks or returns.
+    """
+
+    score: int
+    doc: str
+    page: int
+    #: Root-first, same order `RankedSection.ancestors` held the strings in --
+    #: now positions in `SearchResponse.ancestors` instead of the text itself.
+    ancestor_ids: list[int]
+    section_id: str
+    matched_children: list[str]
+
+
+@dataclass(frozen=True)
+class SearchResponse:
+    """`search`'s wire shape: ancestor heading strings interned once each,
+    referenced by index from every section that shares them (#87) -- sections
+    under one heading, or under one another's, no longer each carry their own
+    copy of it.
+    """
+
+    #: Unique ancestor strings, first-appearance order across `sections`.
+    ancestors: list[str]
+    sections: list[WireSection]
+
+
+def _dedupe_ancestors(ranked: list[RankedSection]) -> SearchResponse:
+    """Intern `RankedSection.ancestors` strings into a shared pool.
+
+    One entry per distinct heading text, however many sections' chains it
+    appears in or at what depth -- a pool over strings rather than over whole
+    chains, so two sections whose chains overlap only partway (share a
+    grandparent but not a parent) still dedupe the shared part.
+    """
+    pool: dict[str, int] = {}
+    sections = []
+    for r in ranked:
+        ids = []
+        for heading in r.ancestors:
+            idx = pool.setdefault(heading, len(pool))
+            ids.append(idx)
+        sections.append(
+            WireSection(
+                score=r.score,
+                doc=r.doc,
+                page=r.page,
+                ancestor_ids=ids,
+                section_id=r.section_id,
+                matched_children=r.matched_children,
+            )
+        )
+    return SearchResponse(ancestors=list(pool), sections=sections)
+
+
 def build_server(substrate: Substrate) -> MCPServer:
     """Register `search` against an already-loaded substrate.
 
@@ -138,8 +203,8 @@ def build_server(substrate: Substrate) -> MCPServer:
     server = MCPServer("normativa")
 
     @server.tool(description=SEARCH_DESCRIPTION)
-    def search(terms: list[str]) -> list[RankedSection]:
-        return _search(terms, substrate)
+    def search(terms: list[str]) -> SearchResponse:
+        return _dedupe_ancestors(_search(terms, substrate))
 
     @server.tool(description=GET_DESCRIPTION)
     def get(ids: list[str]) -> GetResponse:

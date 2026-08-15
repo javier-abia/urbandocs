@@ -24,11 +24,14 @@ from mcp.client.session import ClientSession
 
 from urbandocs.read import get, get_page
 from urbandocs.resolve import get_by_cite
+from urbandocs.search import search
 from urbandocs.server import (
     GET_BY_CITE_DESCRIPTION,
     GET_DESCRIPTION,
     GET_PAGE_DESCRIPTION,
     SEARCH_DESCRIPTION,
+    WireSection,
+    _dedupe_ancestors,
     build_server,
 )
 from urbandocs.substrate import load_substrate
@@ -65,6 +68,77 @@ async def test_all_four_tools_are_listed_with_non_empty_descriptions(substrate):
         "get_by_cite": GET_BY_CITE_DESCRIPTION,
         "get_page": GET_PAGE_DESCRIPTION,
     }
+
+
+# --------------------------------------------------------------------------- #
+# search's wire shape: ancestor strings interned once, referenced by index
+# (#87) -- `search` itself, and `RankedSection`, are unchanged; only what
+# crosses the wire is re-encoded.
+# --------------------------------------------------------------------------- #
+
+
+def test_dedupe_ancestors_interns_a_chain_shared_across_sections(substrate):
+    """SUA:p32:§9, §13 and §16 all sit under the same three headings (fixture
+    data, not contrived) -- deduping must store that chain once and reference
+    it three times, not carry three independent copies."""
+    ranked = search(["condicion"], substrate)
+    response = _dedupe_ancestors(ranked)
+
+    shared_ids = ["SUA:p32:§9", "SUA:p32:§13", "SUA:p32:§16"]
+    wire_by_id = {s.section_id: s for s in response.sections}
+    want = next(r.ancestors for r in ranked if r.section_id == "SUA:p32:§9")
+    for section_id in shared_ids:
+        wire = wire_by_id[section_id]
+        assert [response.ancestors[i] for i in wire.ancestor_ids] == want
+
+    # One pool entry per distinct heading text, not per section that uses it.
+    assert response.ancestors.count("1.2 Impacto con elementos practicables") == 1
+    assert len(response.ancestors) < sum(len(r.ancestors) for r in ranked)
+
+
+def test_dedupe_ancestors_reconstructs_every_section_unchanged(substrate):
+    """No information lost: resolving each section's `ancestor_ids` against
+    the pool must reproduce exactly the `RankedSection.ancestors` it started
+    from, for every section, not just the ones that share a chain."""
+    ranked = search(["condicion"], substrate)
+    response = _dedupe_ancestors(ranked)
+
+    for original, wire in zip(ranked, response.sections, strict=True):
+        assert [response.ancestors[i] for i in wire.ancestor_ids] == original.ancestors
+        assert wire.section_id == original.section_id
+        assert wire.score == original.score
+        assert wire.doc == original.doc
+        assert wire.page == original.page
+        assert wire.matched_children == original.matched_children
+
+
+@pytest.mark.anyio
+async def test_search_over_the_wire_matches_the_deduped_function_result(substrate):
+    """The MCP `search` tool must return exactly what `_dedupe_ancestors`
+    produces over the plain function's result -- the wire adds no logic of
+    its own beyond that re-encoding."""
+    want = _dedupe_ancestors(search(["condicion"], substrate))
+
+    server = build_server(substrate)
+    async with (
+        InMemoryTransport(server) as (read, write),
+        ClientSession(read, write) as session,
+    ):
+        await session.initialize()
+        result = await session.call_tool("search", {"terms": ["condicion"]})
+
+    assert result.structured_content == {
+        "ancestors": want.ancestors,
+        "sections": [asdict(s) for s in want.sections],
+    }
+
+
+def test_wire_section_carries_no_ancestors_field():
+    """`WireSection` replaces `ancestors` with `ancestor_ids` outright --
+    guards against a re-add that silently reintroduces the duplication #87
+    removed."""
+    assert "ancestors" not in set(WireSection.__dataclass_fields__)
+    assert "ancestor_ids" in WireSection.__dataclass_fields__
 
 
 @pytest.mark.anyio
