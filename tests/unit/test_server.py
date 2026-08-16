@@ -239,6 +239,23 @@ def test_search_description_states_the_term_floor_and_stems():
     assert "may never be dropped" in SEARCH_DESCRIPTION
 
 
+def test_search_description_states_the_minimum_stem_length():
+    assert "never shorter than 3 characters" in SEARCH_DESCRIPTION
+    assert '"m" from "metros"' in SEARCH_DESCRIPTION
+
+
+def test_search_description_excludes_bare_numbers():
+    assert "Leave out bare numbers entirely" in SEARCH_DESCRIPTION
+    assert '"6" reaches "6", "60", "6.1", "6º"' in SEARCH_DESCRIPTION
+
+
+def test_search_description_states_terms_are_marginal_cost_only():
+    assert "never truncated, so an added term can only grow the result" in (
+        SEARCH_DESCRIPTION
+    )
+    assert "one term per necessary content word and stop" in SEARCH_DESCRIPTION
+
+
 def test_search_description_states_the_loop_order_and_single_refine_round():
     for step in ("sweep", "rank", "`get`", "expand"):
         assert step in SEARCH_DESCRIPTION
