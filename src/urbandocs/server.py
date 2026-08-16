@@ -45,10 +45,11 @@ STREAMABLE_HTTP_PATH = "/mcp"
 # completeness on its behalf.
 #
 # Also states the general cost mechanism and named failure shapes of it
-# (#88): matching unions across terms and is never truncated, so every term
-# is pure marginal cost -- one term per necessary content word, nothing
-# extra "to be safe". Named cases: the municipality's own name ("Vigo",
-# which also collides as a stem with "vigor" -- "entrada en vigor"), a
+# (#88): matching unions across terms, and adding a term can only raise a
+# section's score, so every term is pure marginal cost -- one term per
+# necessary content word, nothing extra "to be safe". Named cases: the
+# municipality's own name ("Vigo", which also collides as a stem with
+# "vigor" -- "entrada en vigor"), a
 # stem shortened past a 3-character floor, and bare numbers, excluded
 # outright -- stem-prefix-matches any longer number sharing its digits
 # (page and article numbers included), never just the value asked about,
@@ -57,7 +58,10 @@ STREAMABLE_HTTP_PATH = "/mcp"
 # unnecessary.
 SEARCH_DESCRIPTION = (
     "Sweep the whole normativa corpus for the given terms and return the "
-    "complete ranked list of matching sections, never truncated. Submit "
+    "ranked list of matching sections -- every section that matched two or "
+    "more terms, never a rank-based top-N. A section that matched only one "
+    "term does not come back, which means a single-term search never returns "
+    "anything: submit at least two terms whenever a result is wanted. Submit "
     "every content word of the question as its own term -- entity and "
     'attribute searched separately, e.g. "anchura" and "puerta", never '
     '"anchura de puerta" as one term -- and submit each term as a stem, '
@@ -69,9 +73,9 @@ SEARCH_DESCRIPTION = (
     "other numeric string sharing that prefix -- page numbers, article "
     "numbers, and unrelated measurements, never just the value the "
     "question asked about -- so a number is never worth submitting on its "
-    "own. Matching unions across terms and the "
-    "result is never truncated, so an added term can only grow the result, "
-    "never shrink it: submit exactly one term per necessary content word "
+    "own. Matching unions across terms, and adding a term can only raise a "
+    "section's score, never lower it -- so a refine round can only grow the "
+    "result, never shrink it: submit exactly one term per necessary content word "
     'and stop -- no optional or "just in case" terms, since each one is '
     "pure marginal cost with no filtering benefit. Every term counts "
     "equally toward a section's score, so a term the whole corpus shares "
@@ -81,7 +85,8 @@ SEARCH_DESCRIPTION = (
     "is stem-prefix, such a term can also collide with an unrelated common "
     'word ("Vigo" reaches "vigor" too), inflating the wrong section\'s score '
     "rather than the right one's. A term matching nothing contributes "
-    "nothing to the result; it is not an error. Synonyms may be added to a "
+    "nothing to the result; it is not an error, and neither is a term that "
+    "matches only sections the floor drops. Synonyms may be added to a "
     "slot; terms already in the "
     "sweep may never be dropped on a refine round. Each returned section "
     "carries an address only -- "
