@@ -172,8 +172,12 @@ def test_a_single_child_group_reproduces_the_original_id_unchanged():
 def test_dedupe_ancestors_groups_matched_children_by_prefix(substrate):
     """`D128:p21:A.2.2`'s three matched children all sit on `D128:p22` --
     the wire section must carry one compact entry, not three independent
-    ids."""
-    ranked = search(["ancho"], substrate)
+    ids.
+
+    Paired with "minimo" (present in the same three children as "ancho") so
+    the section clears the #102 score floor; the matched children are the
+    same three either way."""
+    ranked = search(["ancho", "minimo"], substrate)
     response = _dedupe_ancestors(ranked)
     wire = next(s for s in response.sections if s.section_id == "D128:p21:A.2.2")
     assert wire.matched_children == ["D128:p22:§4,§8,A.2.2.e"]
@@ -182,7 +186,7 @@ def test_dedupe_ancestors_groups_matched_children_by_prefix(substrate):
 def test_a_grouped_matched_children_id_round_trips_through_get(substrate):
     """A compact entry taken straight from a `search` result must resolve
     through `get` to the same records the original ungrouped ids would."""
-    ranked = search(["ancho"], substrate)
+    ranked = search(["ancho", "minimo"], substrate)
     section = next(r for r in ranked if r.section_id == "D128:p21:A.2.2")
     (entry,) = _group_children(section.matched_children)
 
