@@ -91,7 +91,13 @@ SEARCH_DESCRIPTION = (
     "full on every section: the result carries one `ancestors` pool of "
     "unique heading strings, and each section's `ancestor_ids` are "
     "root-first indices into it -- look each one up to read the section's "
-    "full chain. This is the first step of a fixed loop: "
+    "full chain. `matched_children` does not repeat its `doc:page` prefix on "
+    "every id either: several ids on the same page compact to one entry, "
+    '`"DOC:pN:tail1,tail2"` in place of `"DOC:pN:tail1"` and '
+    '"DOC:pN:tail2" -- split the tail on `,` and rejoin each with the '
+    "prefix to get the full ids, or pass the compact entry straight to "
+    "`get(ids=[...])`, which accepts it as-is. This is "
+    "the first step of a fixed loop: "
     "sweep here, rank arrives pre-sorted, `get` the sections that matter, "
     "then expand by following at most one in-corpus pointer via `get_by_cite` "
     "and search again if it opens a new question -- one refine round, not a "
@@ -111,6 +117,9 @@ GET_DESCRIPTION = (
     "grandchildren, never a sibling's subtree -- because a qualifier often "
     "lives in the parent and the obligation it introduces often lives in the "
     "children. Batch several ids in one call rather than calling once per id. "
+    "An id may also be a compact `matched_children` entry straight from "
+    '`search` -- `"DOC:pN:tail1,tail2"` -- expanded to its full ids before '
+    "lookup; no need to expand it client-side first. "
     "An id not found in the corpus is reported by itself and does not fail "
     "the rest of the batch; a large batch is never truncated or refused. This "
     "is the loop's `get` step, called on what `search` ranked -- the text it "
@@ -167,6 +176,10 @@ class WireSection:
     #: now positions in `SearchResponse.ancestors` instead of the text itself.
     ancestor_ids: list[int]
     section_id: str
+    #: `RankedSection.matched_children`, ids sharing a `doc:pPage` prefix
+    #: compacted into one entry (#100): `"DOC:pN:tail1,tail2"` in place of
+    #: `"DOC:pN:tail1"` and `"DOC:pN:tail2"`. `get(ids=[...])` accepts this
+    #: form directly, expanding it back to full ids itself.
     matched_children: list[str]
 
 
@@ -183,8 +196,30 @@ class SearchResponse:
     sections: list[WireSection]
 
 
+def _group_children(child_ids: list[str]) -> list[str]:
+    """Compact ids sharing a `doc:pPage` prefix into one entry each (#100),
+    first-appearance order, tails comma-joined in the order the ids arrived
+    in: `"DOC:pN:tail1,tail2"` in place of two separate ids.
+
+    An id's `path` segment -- everything after its last `:` -- never itself
+    contains a `:` or a `,` (`ingest.make_id`'s own contract), so splitting
+    on the last `:` and joining tails with `,` is exact and reversible: a
+    single-tail group reproduces the original id unchanged, byte for byte.
+    """
+    order: list[str] = []
+    tails_by_prefix: dict[str, list[str]] = {}
+    for child_id in child_ids:
+        prefix, _, tail = child_id.rpartition(":")
+        if prefix not in tails_by_prefix:
+            order.append(prefix)
+            tails_by_prefix[prefix] = []
+        tails_by_prefix[prefix].append(tail)
+    return [f"{prefix}:{','.join(tails_by_prefix[prefix])}" for prefix in order]
+
+
 def _dedupe_ancestors(ranked: list[RankedSection]) -> SearchResponse:
-    """Intern `RankedSection.ancestors` strings into a shared pool.
+    """Intern `RankedSection.ancestors` strings into a shared pool, and group
+    each section's `matched_children` by prefix (#87, #100).
 
     One entry per distinct heading text, however many sections' chains it
     appears in or at what depth -- a pool over strings rather than over whole
@@ -205,7 +240,7 @@ def _dedupe_ancestors(ranked: list[RankedSection]) -> SearchResponse:
                 page=r.page,
                 ancestor_ids=ids,
                 section_id=r.section_id,
-                matched_children=r.matched_children,
+                matched_children=_group_children(r.matched_children),
             )
         )
     return SearchResponse(ancestors=list(pool), sections=sections)

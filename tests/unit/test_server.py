@@ -22,7 +22,7 @@ import pytest
 from mcp.client._memory import InMemoryTransport
 from mcp.client.session import ClientSession
 
-from urbandocs.read import get, get_page
+from urbandocs.read import _expand_ids, get, get_page
 from urbandocs.resolve import get_by_cite
 from urbandocs.search import search
 from urbandocs.server import (
@@ -32,6 +32,7 @@ from urbandocs.server import (
     SEARCH_DESCRIPTION,
     WireSection,
     _dedupe_ancestors,
+    _group_children,
     build_server,
 )
 from urbandocs.substrate import load_substrate
@@ -109,7 +110,7 @@ def test_dedupe_ancestors_reconstructs_every_section_unchanged(substrate):
         assert wire.score == original.score
         assert wire.doc == original.doc
         assert wire.page == original.page
-        assert wire.matched_children == original.matched_children
+        assert _expand_ids(wire.matched_children) == original.matched_children
 
 
 @pytest.mark.anyio
@@ -133,6 +134,62 @@ async def test_search_over_the_wire_matches_the_deduped_function_result(substrat
     }
 
 
+# --------------------------------------------------------------------------- #
+# search's wire shape: matched_children compacted by doc:pPage prefix (#100)
+# -- `search` itself, and `RankedSection`, are unchanged; only what crosses
+# the wire is re-encoded.
+# --------------------------------------------------------------------------- #
+
+
+def test_group_children_groups_by_prefix_first_appearance_order():
+    """Three ids on one page and one on another -- one compact entry per
+    page, pages in the order their first id appeared, tails in the order the
+    ids arrived. The trailing `p22` id joins the entry already opened by the
+    first two, rather than opening a second `p22` entry at the end."""
+    grouped = _group_children(
+        ["D128:p22:§4", "D128:p22:§8", "D128:p21:§1", "D128:p22:A.2.2.e"]
+    )
+    assert grouped == ["D128:p22:§4,§8,A.2.2.e", "D128:p21:§1"]
+
+
+def test_group_children_round_trips_to_the_original_ids():
+    """Every id reconstructs from its compact entry -- pure re-encoding,
+    nothing dropped or reordered."""
+    ids = ["D128:p22:§4", "D128:p22:§8", "D128:p22:A.2.2.e"]
+    assert _expand_ids(_group_children(ids)) == ids
+
+
+def test_group_children_of_an_empty_list_is_empty():
+    assert _group_children([]) == []
+
+
+def test_a_single_child_group_reproduces_the_original_id_unchanged():
+    """The common case -- one matched child on a page -- pays no encoding
+    overhead: no comma, byte-identical to the ungrouped id."""
+    assert _group_children(["D128:p21:A.2.2.e"]) == ["D128:p21:A.2.2.e"]
+
+
+def test_dedupe_ancestors_groups_matched_children_by_prefix(substrate):
+    """`D128:p21:A.2.2`'s three matched children all sit on `D128:p22` --
+    the wire section must carry one compact entry, not three independent
+    ids."""
+    ranked = search(["ancho"], substrate)
+    response = _dedupe_ancestors(ranked)
+    wire = next(s for s in response.sections if s.section_id == "D128:p21:A.2.2")
+    assert wire.matched_children == ["D128:p22:§4,§8,A.2.2.e"]
+
+
+def test_a_grouped_matched_children_id_round_trips_through_get(substrate):
+    """A compact entry taken straight from a `search` result must resolve
+    through `get` to the same records the original ungrouped ids would."""
+    ranked = search(["ancho"], substrate)
+    section = next(r for r in ranked if r.section_id == "D128:p21:A.2.2")
+    (entry,) = _group_children(section.matched_children)
+
+    response = get([entry], substrate)
+    assert [r.id for r in response.records] == section.matched_children
+
+
 def test_wire_section_carries_no_ancestors_field():
     """`WireSection` replaces `ancestors` with `ancestor_ids` outright --
     guards against a re-add that silently reintroduces the duplication #87
@@ -144,6 +201,27 @@ def test_wire_section_carries_no_ancestors_field():
 @pytest.mark.anyio
 async def test_get_over_the_wire_returns_the_same_records_as_the_function(substrate):
     ids = ["D128:p21:A.2.2", "SUA:p74:anejoB", "HAB:p20:art14.1.a"]
+    want = get(ids, substrate)
+
+    server = build_server(substrate)
+    async with (
+        InMemoryTransport(server) as (read, write),
+        ClientSession(read, write) as session,
+    ):
+        await session.initialize()
+        result = await session.call_tool("get", {"ids": ids})
+
+    assert result.structured_content == {
+        "records": [asdict(r) for r in want.records],
+        "unknown_ids": want.unknown_ids,
+    }
+
+
+@pytest.mark.anyio
+async def test_get_over_the_wire_accepts_a_compact_id_mixed_with_a_plain_one(substrate):
+    """A compact `"DOC:pN:tail1,tail2"` entry, exactly as `search` prints it,
+    must resolve over the wire the same way the expanded ids would."""
+    ids = ["D128:p21:A.2", "D128:p22:§4,§8,A.2.2.e"]
     want = get(ids, substrate)
 
     server = build_server(substrate)
@@ -247,6 +325,18 @@ def test_search_description_states_the_minimum_stem_length():
 def test_search_description_excludes_bare_numbers():
     assert "Leave out bare numbers entirely" in SEARCH_DESCRIPTION
     assert '"6" reaches "6", "60", "6.1", "6º"' in SEARCH_DESCRIPTION
+
+
+def test_search_description_states_the_matched_children_grouping():
+    """#100: teaches the compact shape and how to rejoin or reuse it, the
+    same way #87 documented `ancestor_ids`."""
+    for phrase in ('"DOC:pN:tail1,tail2"', "`get(ids=[...])`"):
+        assert phrase in SEARCH_DESCRIPTION
+
+
+def test_get_description_states_it_accepts_a_compact_matched_children_entry():
+    for phrase in ("compact", "matched_children", '"DOC:pN:tail1,tail2"'):
+        assert phrase in GET_DESCRIPTION
 
 
 def test_search_description_states_terms_are_marginal_cost_only():
