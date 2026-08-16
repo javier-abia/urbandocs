@@ -1,15 +1,15 @@
-# opencode's replay mechanism, and why the fix isn't a client-side lever
+# Replay compounding across clients, and the Codex subagent lever
 
 Resolves [#91](https://github.com/javier-abia/urbandocs/issues/91) (spike,
 understanding-only, under [#86](https://github.com/javier-abia/urbandocs/issues/86)).
 The question was how opencode/LiteLLM assemble each round's request and
 whether anything can stop a `search`/`get` result from being paid for again
-on every subsequent round. It can, in opencode specifically — but opencode is
-the owner's current interactive client, not a commitment for deployment
-(owner, 2026-08-16: "in deployment I will probably not use opencode"), so a
-config flag that lives in one client's `~/.config` is evidence about the
-mechanism, not a fix urbandocs can rely on. The durable levers are the ones
-that don't assume which client shows up.
+on every subsequent round. opencode has a config-level answer, but opencode
+is the owner's current interactive client, not the deployment one — the
+owner expects deployment to run through the **Codex desktop app** instead
+(owner, 2026-08-16). Codex was researched directly rather than treating
+opencode's answer as representative: it turns out to have the same replay
+problem but a materially different, and stronger, lever for it.
 
 ## The mechanism is what everyone assumes, confirmed against source
 
@@ -65,6 +65,54 @@ tokens cross 40K. On a corpus where a single `search` call already runs
 1.2–2.4K tokens (`docs/research/mcp-tool-surface.md`), that threshold is
 reachable within a handful of rounds, not a rare tail case.
 
+## Codex: the actual likely deployment client
+
+Checked directly rather than assumed from opencode's behavior, since the two
+are separate codebases with no reason to match.
+
+**Same replay problem.** The Responses API supports server-side conversation
+state via `previous_response_id` — a caller can pass just the new turn and
+let OpenAI's servers hold the rest, avoiding resend entirely. Codex doesn't
+use it for multi-turn state despite the API supporting it
+([openai/codex#4047](https://github.com/openai/codex/issues/4047)), so full
+history — every prior tool result included — gets resent each round, the
+same shape as opencode's and as `urbandocs_evals`'s own pydantic-ai loop.
+
+**Codex's own compaction is opaque, not tunable.** Server-side, opt-in via
+`context_management.compact_threshold` on the Responses API call — and the
+resulting compacted item is explicitly documented as "opaque and not
+intended to be human-interpretable," an encrypted blob only OpenAI's
+servers can decrypt. No equivalent to opencode's `compaction.prune`
+(selective, inspectable, tool-output-specific, threshold I could reason
+about against this corpus's payload sizes). Nothing here for urbandocs to
+target even if the desktop app turns it on.
+
+**Codex has native subagents, in the desktop app, triggerable by
+instruction.** This is the lever that matters. Each subagent runs in its
+own context window and sandbox; its tool-call history is explicitly isolated
+from the orchestrator's thread — the docs frame this as preventing "context
+pollution." Delegation can be triggered three ways: an explicit user ask,
+autonomously (Ultra tier only), or **by `AGENTS.md`/skill instructions** —
+meaning it can be made standing behavior for this MCP server specifically,
+not something the architect has to remember to invoke. Subagent activity
+"appears in the ChatGPT desktop app, Codex CLI, and the IDE extension," so
+this isn't a CLI-only feature the desktop app lacks.
+
+**The risk that has to survive prototyping: subagents return summaries by
+default, not raw output.** Codex's own docs frame this as the point — "return
+summaries instead of raw intermediate output" to keep the orchestrator's
+thread clean. That collides directly with this repo's citation guarantee:
+"evidence-only output with no synthesis," every claim grounded in a record
+actually opened with `get`, never a paraphrase
+(`mcp-tool-surface.md`; `evals/src/urbandocs_evals/agent.py`'s
+`SYSTEM_PROMPT`). A subagent that summarizes a `get` result instead of
+returning it verbatim can silently drop or reword the citation an architect
+would otherwise verify against the source PDF. Whether an explicit
+instruction — "return the `get` record verbatim: text, ancestor chain,
+citation id — never summarize or paraphrase" — reliably overrides Codex's
+default summarizing behavior is unconfirmed; it is the first thing a
+prototype needs to test, before token savings are even worth measuring.
+
 ## No protocol-level lever either
 
 MCP itself has nothing that would make aging-out portable across clients.
@@ -90,62 +138,72 @@ that rewrites or trims an outbound request's message array. This closes the
 (Not checked against the deployed gateway's actual config — out of scope
 per the owner, since urbandocs doesn't control that box.)
 
-## Subagent splitting: real lever, real cost
+## Subagent splitting: two different shapes, one much cheaper than the other
 
-Splitting a multi-step question across separate subagent calls keeps each
-subagent's own context free of the others' tool history, so it sidesteps
-replay compounding structurally rather than pruning after the fact. The
-cost is re-establishing shared context per subagent — a second subagent
-that needs the first's `search` results has to either re-run the sweep or
-have them handed over explicitly — and coordination: something has to
-synthesize the subagents' separate findings into one answer with one
-citation set, which is exactly the job the current single-loop
-`search → get → expand → answer` order does implicitly. Not measured here;
-flagged as the one lever in this list that would need a prototype to cost,
-not just a config change.
+**By loop phase** (owner's idea, 2026-08-16): one subagent runs the whole
+`search → rank → get(→ expand)` sequence for a question and returns only
+what `get` produced. This is the shape Codex's subagent primitive fits —
+the ranked list, `search`'s expensive payload
+(105–195 sections, ~12 tok/section per `mcp-tool-surface.md`, and exactly
+the thing an architect never cites from anyway) exists only inside the
+subagent's own context window and is discarded with it, never entering the
+orchestrator's history to be replayed on every later round. Coordination
+cost is close to zero — one subagent, one question, one boundary — and it's
+*semantic* pruning: the ranked list is dropped because it's structurally
+superseded by `get`, not because a token budget happened to trip.
+
+**By sub-topic**: splitting a multi-step question into independent
+subagents per sub-question (e.g. one for `anch`/width provisions, one for
+`trastero`/storage-height provisions). Real coordination cost this repo
+would have to own: a second subagent that needs the first's `search`
+results has to either re-run the sweep or have them handed over explicitly,
+and something has to synthesize the subagents' separate findings into one
+answer with one citation set — the job the current single-loop order does
+implicitly today. Not measured here; a real lever, but a costlier one, and
+not what the owner's idea was describing.
 
 ## Recommendation
 
-**Don't build on `compaction.prune`.** It proves the mechanism (pruning old
-tool output measurably works, opencode already does it once turned on) but
-it lives in one client's config file, and the owner doesn't expect that
-client at deployment. Turning it on is a fine stopgap for today's own
-interactive use of opencode — one line in
-`~/.config/opencode/opencode.json` — but it is not something #86's tracking
-issue should count as solved, since whatever client actually ends up
-calling this MCP server is under no obligation to have anything like it.
+**Prototype delegating `search → get(→ expand)` to a Codex subagent,
+instructed to return the `get` record verbatim.** This is the strongest
+lever found, because it's now checked against the client actually expected
+at deployment rather than the one that happened to produce #86's trace:
 
-**The durable levers are the ones already in flight or genuinely
-client-agnostic**, both because #91 found no protocol- or gateway-level
-lever exists:
+- The primitive exists natively in Codex, including the desktop app, and
+  can be made standing behavior via `AGENTS.md`/skill instructions rather
+  than relying on the architect to ask for delegation each time.
+- It sidesteps replay compounding structurally — the ranked list never
+  enters the orchestrator's history at all — rather than depending on any
+  compaction feature being turned on, tunable, or even inspectable (Codex's
+  own compaction is an opaque server-side blob; opencode's `compaction.prune`
+  is a client config flag the deployment client has no obligation to carry).
+- Coordination cost is near zero for the loop-phase shape (one subagent,
+  one question), unlike splitting by sub-topic.
 
-- **Payload-size reduction** (#87–90, five of six sub-issues already
-  landed per #86) is the one category that helps under *any* client,
-  including a full-replay one with no pruning at all — it shrinks what
-  gets paid for every round rather than trying to stop the resend. This is
-  where further effort belongs.
-- **Subagent splitting** stays worth a prototype once the deployment client
-  is actually chosen — it's a design pattern most modern agent harnesses
-  support in some form (not a config flag), so it doesn't gamble on one
-  client's feature set the way `compaction.prune` does. Its cost
-  (re-establishing shared context, synthesis across subagents) still needs
-  measuring before recommending it, which #91 didn't attempt.
+**The first thing to test is not token savings — it's whether the subagent
+actually returns verbatim evidence instead of a summary.** Codex's docs
+describe summarizing as the *intended* default behavior for subagents; an
+instruction to preserve `get`'s exact text and citation id has to be
+checked against real output, not assumed to reliably override that default.
+If it doesn't hold, this lever fails the citation guarantee before it ever
+gets to save a token, and the idea reverts to needing the sub-topic
+shape's heavier coordination, or no subagent delegation at all.
 
-If the eventual production client turns out to be one urbandocs builds
-itself (in `pydantic_ai`'s style, per `evals/src/urbandocs_evals/agent.py`),
-loop-level pruning becomes a lever urbandocs actually owns rather than
-borrows from a client's config — worth revisiting then, not now.
+**Payload-size reduction** (#87–90, five of six sub-issues already landed
+per #86) stays worth continuing regardless of how the subagent prototype
+goes — it helps inside a subagent's own context too, and doesn't depend on
+Codex's delegation behavior holding up under test.
 
-## What's confirmed against this deployment, not just source
+## What's confirmed, and what still needs a real run
 
-`~/.config/opencode/opencode.json` — the config behind #86's actual Q8 trace
-— carries no `compaction` key at all. Under the default-off behavior
-diagnosed above, that means pruning was off for the run that motivated this
-whole spike, not merely off by some worst-case assumption. Turning on
-`compaction.prune` (and tuning its thresholds for this corpus) is therefore
-a config edit to that one file, not a code change anywhere.
-
-The one thing still unconfirmed is whether `1.18.18` (the version actually
-installed) matches the `dev`-branch source read here — worth a `--version`
-diff against the tagged release before trusting the exact line numbers, not
-before trusting the mechanism.
+Two different depths of confirmation went into this doc. opencode's
+mechanism is confirmed against both source and this deployment's actual
+config: `~/.config/opencode/opencode.json` (the config behind #86's real Q8
+trace) carries no `compaction` key at all, so pruning was off for the run
+that motivated this whole spike, not off by assumption. Codex's mechanism
+is confirmed against public docs and a filed source-level bug report, but
+**not yet against a real Codex desktop session** — the subagent primitive,
+the `AGENTS.md`-triggering, and above all whether verbatim-return
+instructions actually hold are all things this spike read about rather than
+watched happen. That run is the next step, not this one, since #91 was
+scoped as understanding-only.
