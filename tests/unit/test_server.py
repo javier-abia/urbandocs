@@ -81,7 +81,7 @@ def test_dedupe_ancestors_interns_a_chain_shared_across_sections(substrate):
     """SUA:p32:§9, §13 and §16 all sit under the same three headings (fixture
     data, not contrived) -- deduping must store that chain once and reference
     it three times, not carry three independent copies."""
-    ranked = search(["condicion"], substrate)
+    ranked = search(["condicion", "puerta"], substrate)
     response = _dedupe_ancestors(ranked)
 
     shared_ids = ["SUA:p32:§9", "SUA:p32:§13", "SUA:p32:§16"]
@@ -100,7 +100,7 @@ def test_dedupe_ancestors_reconstructs_every_section_unchanged(substrate):
     """No information lost: resolving each section's `ancestor_ids` against
     the pool must reproduce exactly the `RankedSection.ancestors` it started
     from, for every section, not just the ones that share a chain."""
-    ranked = search(["condicion"], substrate)
+    ranked = search(["condicion", "puerta"], substrate)
     response = _dedupe_ancestors(ranked)
 
     for original, wire in zip(ranked, response.sections, strict=True):
@@ -117,7 +117,7 @@ async def test_search_over_the_wire_matches_the_deduped_function_result(substrat
     """The MCP `search` tool must return exactly what `_dedupe_ancestors`
     produces over the plain function's result -- the wire adds no logic of
     its own beyond that re-encoding."""
-    want = _dedupe_ancestors(search(["condicion"], substrate))
+    want = _dedupe_ancestors(search(["condicion", "puerta"], substrate))
 
     server = build_server(substrate)
     async with (
@@ -125,7 +125,7 @@ async def test_search_over_the_wire_matches_the_deduped_function_result(substrat
         ClientSession(read, write) as session,
     ):
         await session.initialize()
-        result = await session.call_tool("search", {"terms": ["condicion"]})
+        result = await session.call_tool("search", {"terms": ["condicion", "puerta"]})
 
     assert result.structured_content == {
         "ancestors": want.ancestors,
@@ -250,10 +250,18 @@ def test_search_description_excludes_bare_numbers():
 
 
 def test_search_description_states_terms_are_marginal_cost_only():
-    assert "never truncated, so an added term can only grow the result" in (
+    assert "adding a term can only raise a section's score, never lower it" in (
         SEARCH_DESCRIPTION
     )
     assert "one term per necessary content word and stop" in SEARCH_DESCRIPTION
+
+
+def test_search_description_states_the_score_floor_honestly():
+    """#102: `search` no longer claims #56's unqualified "never truncated" --
+    it states the score >= 2 floor and its single-term-search consequence."""
+    assert "never truncated" not in SEARCH_DESCRIPTION
+    assert "two or more terms" in SEARCH_DESCRIPTION
+    assert "single-term search never returns anything" in SEARCH_DESCRIPTION
 
 
 def test_search_description_states_the_loop_order_and_single_refine_round():

@@ -1,9 +1,12 @@
 """The sweep and the ranking, as plain Python functions over the substrate.
 
 Everything `search` does except cross a wire (#58): given a list of terms, sweep
-the whole corpus, group hits into sections, and return the complete ranked list
-of sections -- never truncated, because the cutoff is the calling agent's
-judgement over heading chains, not a top-N this module imposes (#56).
+the whole corpus, group hits into sections, and return the ranked list of
+sections that matched at least two of them -- no rank-based top-N, because a
+cutoff by position cuts a section the calling agent would have opened (#56,
+#90 benchmarked rank caps and found exactly that). A score floor is a
+different claim: `score == 1` is the weakest signal in the ranking `search`
+already produces, and #102 dropped it on that basis.
 
 Three things this gets wrong silently if it gets them wrong at all (#58):
 
@@ -79,10 +82,16 @@ def search(terms: list[str], substrate: Substrate) -> list[RankedSection]:
     record -- the ranking #56 requires so that a section repeating one term
     forty times cannot outrank one that matched every term once.
 
-    Returns the complete list, never truncated (#56), ordered by score
-    descending and then by the section's first appearance in the corpus, for a
-    result stable across runs. A term matching nothing contributes no section;
-    if no term matches anything the result is `[]`, not an error.
+    Sections matching only one slot (`score == 1`) are dropped before the list
+    is returned (#102): the weakest signal in the ranking, and single-term
+    hits are most of every sweep's bulk. This is not a rank cutoff -- every
+    section scoring 2 or higher comes back, however many there are -- but a
+    section reachable only through one term will not appear, including on a
+    single-term search, where no section can ever score above 1. Ordered by
+    score descending and then by the section's first appearance in the corpus,
+    for a result stable across runs. A term matching nothing contributes no
+    section; a term matching only score-1 sections likewise contributes none
+    of them. If no section clears the floor the result is `[]`, not an error.
     """
     patterns = [_term_pattern(term) for term in terms]
     record_order = {record["id"]: i for i, record in enumerate(substrate.records)}
@@ -114,6 +123,9 @@ def search(terms: list[str], substrate: Substrate) -> list[RankedSection]:
             ),
         )
         for section_id, matched_slots in slots.items()
+        # score >= 2 floor (#102): a single matched slot is the weakest
+        # ranking signal `search` produces, dropped before it ever ranks.
+        if len(matched_slots) >= 2
         # The loader guarantees every parent_id resolves (#58); `by_id` is
         # consulted rather than assumed so a corrupt substrate fails here
         # loudly instead of KeyError-ing three lines down.
