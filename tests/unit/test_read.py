@@ -129,6 +129,63 @@ def test_a_void_id_never_resolves_to_a_different_record(substrate):
     assert response.unknown_ids == ["HAB:p20:art14.1.a"]
 
 
+# --------------------------------------------------------------------------- #
+# the compact-grouped id: the shape `search` produces for `matched_children`
+# and `get` accepts back (#100) -- `"DOC:pN:tail1,tail2"` in place of two
+# fully-expanded ids.
+# --------------------------------------------------------------------------- #
+
+
+def test_a_compact_id_expands_to_its_full_ids_in_order(substrate):
+    """`D128:p22`'s three ids, requested as one compact entry -- must resolve
+    exactly as if each full id had been requested individually, in the
+    entry's own tail order."""
+    response = get(["D128:p22:§4,§8,A.2.2.e"], substrate)
+    assert [r.id for r in response.records] == [
+        "D128:p22:§4",
+        "D128:p22:§8",
+        "D128:p22:A.2.2.e",
+    ]
+    assert response.unknown_ids == []
+
+
+def test_a_compact_id_mixes_with_plain_ids_and_keeps_request_order(substrate):
+    """A compact entry in the middle of a batch expands in place -- it
+    neither jumps to the front nor reorders the plain ids around it."""
+    response = get(["D128:p21:A.2", "D128:p22:§4,§8", "SUA:p74:anejoB"], substrate)
+    assert [r.id for r in response.records] == [
+        "D128:p21:A.2",
+        "D128:p22:§4",
+        "D128:p22:§8",
+        "SUA:p74:anejoB",
+    ]
+
+
+def test_a_plain_id_with_no_comma_is_left_alone(substrate):
+    """The common case -- a section with one matched child -- looks exactly
+    like a plain id, byte for byte: no comma, nothing to expand."""
+    response = get(["D128:p22:§4"], substrate)
+    assert [r.id for r in response.records] == ["D128:p22:§4"]
+
+
+def test_a_malformed_compact_id_is_reported_as_an_ordinary_unknown_id(substrate):
+    """A tail that doesn't correspond to a real id under that prefix must not
+    raise -- it reconstructs into a string, and a string absent from the
+    substrate is unknown, exactly like a bad plain id (#56)."""
+    response = get(["D128:p22:§4,§999"], substrate)
+    assert [r.id for r in response.records] == ["D128:p22:§4"]
+    assert response.unknown_ids == ["D128:p22:§999"]
+
+
+def test_an_id_with_no_colon_at_all_is_reported_unknown_not_split(substrate):
+    """A stray comma with nothing that looks like a `doc:pPage` prefix ahead
+    of it must not be treated as a group -- reported unknown as-is, not
+    torn apart on the comma."""
+    response = get(["not-an-id,at-all"], substrate)
+    assert response.records == []
+    assert response.unknown_ids == ["not-an-id,at-all"]
+
+
 def test_an_oversized_batch_is_disclosed_never_truncated_never_refused(substrate):
     """Every known id in the fixture, requested in one call -- nothing here
     caps the batch, so the response is exactly as long as the request."""

@@ -34,6 +34,35 @@ if TYPE_CHECKING:
     from urbandocs.substrate import Substrate
 
 
+def _expand_id(entry: str) -> list[str]:
+    """Expand one requested id, plain or compact-grouped, to its full id(s).
+
+    A compact group names several ids sharing a `doc:pPage` prefix without
+    repeating it (#100): `"DOC:pN:tail1,tail2"` in place of
+    `"DOC:pN:tail1"` and `"DOC:pN:tail2"` -- the same grouping `search`'s
+    wire format prints `matched_children` in, so those ids can be passed to
+    `get` straight from a `search` result. A plain id has no `,` in its
+    tail and expands to itself unchanged; no id in the corpus contains a
+    literal `,` (`ingest.cite_path` never produces one), so the comma is an
+    unambiguous marker rather than a character a real id could collide with.
+    """
+    prefix, sep, tail = entry.rpartition(":")
+    if not sep or "," not in tail:
+        return [entry]
+    return [f"{prefix}:{one}" for one in tail.split(",")]
+
+
+def _expand_ids(ids: list[str]) -> list[str]:
+    """Flatten a batch of plain and compact-grouped ids into plain ids, in
+    order -- a group expands to its members in place, at its own position
+    in the batch.
+    """
+    expanded: list[str] = []
+    for entry in ids:
+        expanded.extend(_expand_id(entry))
+    return expanded
+
+
 @dataclass(frozen=True)
 class ChildRecord:
     """One direct child of a requested record -- context, not the match.
@@ -72,12 +101,14 @@ class GetRecord:
 class GetResponse:
     """The result of one `get` call.
 
-    `records` holds one `GetRecord` per known id, in the order requested.
-    `unknown_ids` names every id that was not in the substrate, in the order
-    requested -- reported, not swallowed, and it never fails the rest of the
-    batch (#56). Nothing here caps batch size: a large batch is disclosed by
-    the shape of this response -- `records` as long as the known ids, nothing
-    trimmed -- never truncated and never refused.
+    `records` holds one `GetRecord` per known id, in the order requested --
+    a compact-grouped id in the request expands to its members in order, in
+    its own place in the sequence. `unknown_ids` names every id that was not
+    in the substrate, in the same order -- reported, not swallowed, and it
+    never fails the rest of the batch (#56). Nothing here caps batch size: a
+    large batch is disclosed by the shape of this response -- `records` as
+    long as the known ids, nothing trimmed -- never truncated and never
+    refused.
     """
 
     records: list[GetRecord]
@@ -87,6 +118,11 @@ class GetResponse:
 def get(ids: list[str], substrate: Substrate) -> GetResponse:
     """Return each requested record with its ancestor chain and direct children.
 
+    `ids` accepts compact-grouped ids as well as plain ones (#100) -- each
+    is expanded to its full ids before anything else here runs, so a
+    `search` result's `matched_children` can be passed straight through
+    without expanding it client-side first.
+
     Batched: one call over many ids is one pass over the substrate's indices,
     not one round trip per id. An id absent from the substrate is collected
     into `unknown_ids` rather than raising -- one bad id in a batch of ten must
@@ -95,7 +131,7 @@ def get(ids: list[str], substrate: Substrate) -> GetResponse:
     records: list[GetRecord] = []
     unknown_ids: list[str] = []
 
-    for record_id in ids:
+    for record_id in _expand_ids(ids):
         record = substrate.by_id.get(record_id)
         if record is None:
             unknown_ids.append(record_id)
