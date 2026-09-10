@@ -26,8 +26,9 @@ uv run pytest               # tests
 anywhere else and it silently collects nothing and reports success.
 
 Scope: the gates cover `src/urbandocs/` and `tests/` only. `scripts/` holds
-research scripts kept as evidence for decisions already made, and
-`tools/docling-convert/` resolves its own ML toolchain; both are excluded
+research scripts kept as evidence for decisions already made,
+`tools/docling-convert/` resolves its own ML toolchain, and `evals/` has its
+own `pyproject.toml`/`uv.lock` resolved independently; all three are excluded
 deliberately, so do not "fix" them into the gates.
 
 Two settings are worth knowing before they surprise you:
@@ -49,8 +50,7 @@ uv run pre-commit install
 
 Skipping it is not fatal — CI runs the same config over every file — but you
 will find out in review rather than in a second. Git hooks live in `.git/`,
-which is not cloned and not shared, so this is per-clone. (It *is* shared
-between a repo and its worktrees, which use the same `.git/hooks`.)
+which is not cloned and not shared, so this is per-clone.
 
 The hooks **fix rather than reject** wherever they can, because agents commit
 here and a failure nobody can diagnose becomes a retry loop. When a hook edits
@@ -61,7 +61,7 @@ What runs, from `.pre-commit-config.yaml` (~2s over the whole repo):
 
 ```
 trailing whitespace, end of file    fix
-check-added-large-files (3 MB)      reject
+check-added-large-files (10 MB)     reject
 detect-secrets                      reject
 ruff check --fix                    fix what it can, reject the rest
 ruff format                         fix
@@ -78,11 +78,9 @@ Two things that will otherwise surprise you:
   in particular has rows ending in two tabs — empty `text` and `norm` columns —
   and stripping them makes the rows 6 columns wide and breaks five tests.
 - **A secret-scan false positive** is silenced with a trailing
-  `# pragma: allowlist secret` on the line. That is the hatch to reach for.
-  `detect-secrets` is not a project dependency — pre-commit builds it in its own
-  venv — so re-recording the whole baseline, which you should rarely want, means
-  `uvx --from 'detect-secrets==1.5.0' detect-secrets scan --baseline .secrets.baseline`,
-  with the version matching the `rev` in `.pre-commit-config.yaml`.
+  `# pragma: allowlist secret` on the line. That is the hatch to reach for;
+  re-recording the whole `.secrets.baseline` is rarely what you want, and the
+  command for it is in `.pre-commit-config.yaml`.
 
 To bypass everything in an emergency: `git commit --no-verify`. CI will still
 catch it.
@@ -97,20 +95,6 @@ Measured counts, worked examples, and rejected alternatives are real
 signal, but they belong in the commit message or PR description, not baked
 into the source — git history is where "why we didn't do X" and "we
 measured N sites" should live, not a comment block above a regex.
-
-```python
-# Bad: narrates the investigation
-# The Diario Oficial sets two justified columns and breaks words across
-# lines. docling rejoins them but keeps the hyphen... [20 more lines,
-# corpus counts, a worked example table, a rejected alternative]
-DASH_PAIR_WINDOW = 200
-
-# Good: states the contract and the one-line why
-# Line-break hyphens must be rejoined; parenthetical dashes must not be.
-# Discriminator: parenthetical dashes pair (open + close), line-break
-# hyphens never close (#32, #41).
-DASH_PAIR_WINDOW = 200
-```
 
 ## Commit & PR conventions
 
