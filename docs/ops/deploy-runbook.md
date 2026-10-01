@@ -9,7 +9,7 @@ Covers deploying the **engine** — the MCP server and the substrate it serves �
 onto a box that already runs `systemd`, has `uv` on `PATH`, and already runs
 LiteLLM registered against it (map [#45](https://github.com/javier-abia/urbandocs/issues/45),
 [#43](https://github.com/javier-abia/urbandocs/issues/43)). Provisioning the box
-itself, installing LiteLLM, and wiring Langsmith are **not** covered here — see
+itself, installing LiteLLM, and wiring Langfuse are **not** covered here — see
 map #45's Out of scope.
 
 No containers, no CD. One box, one practice, an infrequent deploy: a correct

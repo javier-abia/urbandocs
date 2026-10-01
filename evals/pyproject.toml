@@ -1,7 +1,7 @@
 [project]
 name = "urbandocs-evals"
 version = "0.1.0"
-description = "End-to-end eval harness: pydantic-ai agent as a real MCP client, LiteLLM model routing, LangSmith-tracked experiments (#85)"
+description = "End-to-end eval harness: pydantic-ai agent as a real MCP client, LiteLLM model routing, Langfuse-tracked experiments (#85)"
 readme = "README.md"
 requires-python = ">=3.14"
 
@@ -9,8 +9,8 @@ requires-python = ">=3.14"
 # uv.lock, resolved independently of the root project. `urbandocs.server`'s
 # production `dependencies` list (currently just `mcp`) is untouched by this.
 dependencies = [
-    "langsmith>=0.10.17",
-    "pydantic-ai>=2.27.1",
+    "langfuse>=4.16.0",
+    "pydantic-ai-slim[mcp,openai]>=2.52.0",
     "python-dotenv>=1.2.2",
 ]
 

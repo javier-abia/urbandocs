@@ -1,11 +1,11 @@
-"""Upload the gold set as a LangSmith Dataset (#85).
+"""Sync the gold set into a Langfuse Dataset (#85).
 
 `docs/eval-questions.csv` and `docs/eval-answers.csv` are the 20-question
 gold set (#30) -- one row per question, joined here on `(set, number)` into
-one LangSmith example per question: `inputs={"question"}`,
-`outputs={"answer", "sources"}` as the reference an experiment is graded
-against. Uploaded once; every harness run afterwards is an Experiment
-against this same Dataset, so pass rate is comparable run-over-run (#85).
+one Langfuse dataset item per question: `input={"question"}`,
+`expected_output={"answer", "sources"}` as the reference an experiment is
+graded against. Every harness run is an Experiment against this same
+Dataset, so pass rate is comparable run-over-run (#85).
 """
 
 from __future__ import annotations
@@ -15,8 +15,9 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
-from langsmith import Client
-from langsmith.schemas import ExampleCreate
+from langfuse import Langfuse
+from langfuse.api import NotFoundError
+from langfuse.api.commons.types.dataset_status import DatasetStatus
 
 QUESTIONS_CSV = "eval-questions.csv"
 ANSWERS_CSV = "eval-answers.csv"
@@ -33,6 +34,10 @@ class GoldExample:
     @property
     def key(self) -> tuple[str, str]:
         return (self.set_, self.number)
+
+    def item_id(self, dataset_name: str) -> str:
+        # Langfuse upserts items on id, unique project-wide -- so prefix the dataset.
+        return f"{dataset_name}-{self.set_}-{self.number}"
 
 
 def _read_rows(path: Path) -> Iterator[dict[str, str]]:
@@ -74,51 +79,54 @@ def load_gold_set(docs_dir: Path) -> list[GoldExample]:
     ]
 
 
-def upload_dataset(
-    client: Client,
-    dataset_name: str,
-    docs_dir: Path,
-    *,
-    recreate: bool = False,
-) -> str:
-    """Create (or replace) the LangSmith dataset from the gold-set CSVs.
+def upload_dataset(client: Langfuse, dataset_name: str, docs_dir: Path) -> str:
+    """Create the Langfuse dataset if missing and sync its items to the CSVs.
 
-    Returns a one-line summary for the caller to print. Idempotent by
-    default: an existing dataset is left alone and reported, not silently
-    re-uploaded into duplicate examples -- pass `recreate=True` to drop and
-    rebuild it (e.g. after the gold set changes).
+    Returns a one-line summary for the caller to print. Idempotent: items
+    upsert on a deterministic id, so re-running after a gold-set edit updates
+    them in place (Langfuse versions items, so past runs keep what they saw).
+    An item no longer in the CSVs is archived, not deleted -- deleting would
+    erase its run history.
     """
     gold = load_gold_set(docs_dir)
 
-    exists = client.has_dataset(dataset_name=dataset_name)
-    if exists and recreate:
-        client.delete_dataset(dataset_name=dataset_name)
-        exists = False
+    try:
+        existing = client.get_dataset(dataset_name).items
+    except NotFoundError:
+        client.create_dataset(
+            name=dataset_name,
+            description=(
+                "urbandocs gold set (#30): 20 normativa questions, each with a "
+                "human-judged answer and its required citations. PASS is "
+                "all-or-nothing -- content matches AND every cited source is "
+                "covered, per #85."
+            ),
+        )
+        existing = []
 
-    if exists:
-        return (
-            f"dataset {dataset_name!r} already exists -- left untouched "
-            f"({len(gold)} rows in the CSVs). Pass --recreate to rebuild it."
+    for g in gold:
+        client.create_dataset_item(
+            dataset_name=dataset_name,
+            id=g.item_id(dataset_name),
+            input={"question": g.question},
+            expected_output={"answer": g.answer, "sources": g.sources},
+            metadata={"set": g.set_, "number": g.number},
+            status=DatasetStatus.ACTIVE,
         )
 
-    dataset = client.create_dataset(
-        dataset_name=dataset_name,
-        description=(
-            "urbandocs gold set (#30): 20 normativa questions, each with a "
-            "human-judged answer and its required citations. PASS is "
-            "all-or-nothing -- content matches AND every cited source is "
-            "covered, per #85."
-        ),
+    wanted = {g.item_id(dataset_name) for g in gold}
+    orphans = [i for i in existing if i.id not in wanted and i.status == DatasetStatus.ACTIVE]
+    for item in orphans:
+        client.create_dataset_item(
+            dataset_name=dataset_name,
+            id=item.id,
+            input=item.input,
+            expected_output=item.expected_output,
+            metadata=item.metadata,
+            status=DatasetStatus.ARCHIVED,
+        )
+
+    return (
+        f"synced dataset {dataset_name!r}: {len(gold)} items upserted, "
+        f"{len(orphans)} archived"
     )
-    client.create_examples(
-        dataset_id=dataset.id,
-        examples=[
-            ExampleCreate(
-                inputs={"question": g.question},
-                outputs={"answer": g.answer, "sources": g.sources},
-                metadata={"set": g.set_, "number": g.number},
-            )
-            for g in gold
-        ],
-    )
-    return f"created dataset {dataset_name!r} with {len(gold)} examples"

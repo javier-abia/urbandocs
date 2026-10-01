@@ -65,6 +65,7 @@ def build_agent(cfg: Config) -> Agent[None, str]:
     )
     return Agent(
         build_litellm_model(cfg, cfg.eval_model),
+        name="answer-normativa-question",
         toolsets=[toolset],
         system_prompt=SYSTEM_PROMPT,
     )

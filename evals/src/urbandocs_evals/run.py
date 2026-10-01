@@ -1,125 +1,146 @@
-"""Run the harness as a LangSmith Experiment against the gold-set Dataset (#85).
+"""Run the harness as a Langfuse Experiment against the gold-set Dataset (#85).
 
-One `aevaluate` call: `target` drives a fresh agent through the real MCP
+One `run_experiment` call: `task` drives a fresh agent through the real MCP
 loop for each question, `judge_evaluator` grades the resulting answer
 pass/fail against that question's gold answer and sources, as the
-`correctness` feedback key. Each call is its own LangSmith Experiment, so
-pass rate is comparable run-over-run through the LangSmith UI rather than a
-local log the next run overwrites. When the judge flags a wrong extra claim
-the candidate volunteered, that's a second, separate `extra_claim` feedback
-key -- informational for spot-checking, it never changes `correctness`.
-`metrics_evaluator` records #84's latency/token-usage/step-count benchmarks
-as three more feedback keys, off the same run -- no second model call, just
-surfacing what `target` already measured.
+`correctness` score. Each call is its own Langfuse dataset run, so pass rate
+is comparable run-over-run through the Langfuse UI rather than a local log
+the next run overwrites. When the judge flags a wrong extra claim the
+candidate volunteered, that's a second, separate `extra_claim` score --
+informational for spot-checking, it never changes `correctness`. #84's
+latency/token-usage/step-count benchmarks are scored from inside `task`, off
+the same run -- no second model call -- and a run-level `pass_rate` sums up
+`correctness`.
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterable
 from typing import Any
 
-from langsmith import Client
-from langsmith.evaluation import aevaluate
-from langsmith.schemas import Example, Run
+from langfuse import Evaluation, Langfuse
+from langfuse.api.commons.types.dataset_item import DatasetItem
+from langfuse.api.commons.types.dataset_status import DatasetStatus
+from langfuse.experiment import ExperimentItemResult, ExperimentResult
+from pydantic_ai import Agent
 
-from urbandocs_evals.agent import answer_question, build_agent
+from urbandocs_evals.agent import AnswerResult, answer_question, build_agent
 from urbandocs_evals.config import Config
 from urbandocs_evals.judge import GradingInputs, build_judge, grade
 
 
-def _select_examples(
-    client: Client, dataset_name: str, question_set: str | None
-) -> str | Iterable[Example]:
-    """`aevaluate`'s `data` -- the whole Dataset by name, or one `set` from it.
+def _select_items(items: list[DatasetItem], question_set: str | None) -> list[DatasetItem]:
+    """The active items to run -- all of them, or one `set` from them.
 
-    Filters on each example's `metadata={"set": ...}` (set by
-    `upload_dataset`) instead of maintaining a second Dataset, so an
-    easy-only or complex-only run's pass rate stays comparable, in the same
-    LangSmith UI, to a run against the whole gold set.
-    """
-    if question_set is None:
-        return dataset_name
-    return client.list_examples(dataset_name=dataset_name, metadata={"set": question_set})
-
-
-def _metrics_results(outputs: dict[str, Any]) -> list[dict[str, Any]]:
-    """The #84 feedback rows for one run's `target` outputs.
-
-    Pulled out of `metrics_evaluator` so the mapping is unit-testable without
-    a `Run` object -- `target` already put these fields there, this just
-    names them as LangSmith feedback keys. Token counts ride on `value`, not
-    `score`: LangSmith rejects a feedback `score` outside
-    +-99999.9999 (422 on ingest), a bound a sweep-heavy question's prompt
-    tokens clear in practice. `latency_seconds`/`step_count` stay on `score`
-    since nothing in this harness gets near that ceiling for either.
+    Filters on each item's `metadata={"set": ...}` (set by `upload_dataset`)
+    instead of maintaining a second Dataset, so an easy-only or complex-only
+    run's pass rate stays comparable, in the same Langfuse UI, to a run
+    against the whole gold set. Archived items (dropped from the gold set)
+    are never run.
     """
     return [
-        {"key": "latency_seconds", "score": outputs.get("latency_seconds")},
-        {"key": "input_tokens", "value": outputs.get("input_tokens")},
-        {"key": "output_tokens", "value": outputs.get("output_tokens")},
-        {"key": "step_count", "score": outputs.get("tool_calls")},
+        item
+        for item in items
+        if item.status == DatasetStatus.ACTIVE
+        and (question_set is None or (item.metadata or {}).get("set") == question_set)
     ]
 
 
-async def run_experiment(
+def _metrics_scores(result: AnswerResult) -> list[Evaluation]:
+    """The #84 scores for one agent run."""
+    return [
+        Evaluation(name="latency_seconds", value=result.elapsed_seconds, data_type="NUMERIC"),
+        Evaluation(name="input_tokens", value=result.usage.input_tokens, data_type="NUMERIC"),
+        Evaluation(name="output_tokens", value=result.usage.output_tokens, data_type="NUMERIC"),
+        Evaluation(name="step_count", value=result.usage.tool_calls, data_type="NUMERIC"),
+    ]
+
+
+def _pass_rate(*, item_results: list[ExperimentItemResult], **kwargs: Any) -> Evaluation:
+    """Run-level `pass_rate`: the share of items the judge passed."""
+    verdicts = [
+        bool(e.value) for r in item_results for e in r.evaluations if e.name == "correctness"
+    ]
+    if not verdicts:
+        return Evaluation(name="pass_rate", value=None)
+    rate = sum(verdicts) / len(verdicts)
+    return Evaluation(
+        name="pass_rate", value=rate, comment=f"{sum(verdicts)}/{len(verdicts)} passed"
+    )
+
+
+def run_experiment(
     cfg: Config,
-    client: Client,
+    client: Langfuse,
     *,
     concurrency: int = 1,
     experiment_prefix: str = "urbandocs-eval",
     question_set: str | None = None,
-) -> Any:
+) -> ExperimentResult:
+    # Exports pydantic-ai's model and MCP tool-call spans, so each item's
+    # trace shows the full search/get loop, not just the final answer.
+    Agent.instrument_all()
     judge = build_judge(cfg)
+    dataset = client.get_dataset(cfg.langfuse_dataset)
 
-    async def target(inputs: dict[str, str]) -> dict[str, Any]:
+    async def task(*, item: DatasetItem, **kwargs: Any) -> str:
         # A fresh agent (and fresh MCP session) per question -- simplest
         # thing that is safe under concurrency; 20 questions makes the
         # reconnect cost a non-issue.
         agent = build_agent(cfg)
-        result = await answer_question(agent, inputs["question"], max_requests=cfg.max_requests)
-        return {
-            "answer": result.answer,
-            "latency_seconds": result.elapsed_seconds,
-            "input_tokens": result.usage.input_tokens,
-            "output_tokens": result.usage.output_tokens,
-            "tool_calls": result.usage.tool_calls,
-        }
+        question = (item.input or {})["question"]
+        result = await answer_question(agent, question, max_requests=cfg.max_requests)
+        # Scored on the item's task span, since only the task sees usage; the
+        # trace output stays the answer alone.
+        for score in _metrics_scores(result):
+            client.score_current_span(
+                name=score.name, value=score.value, data_type=score.data_type
+            )
+        return result.answer
 
-    async def judge_evaluator(run: Run, example: Example | None) -> dict[str, Any]:
-        if example is None:
-            raise ValueError("judge_evaluator needs the gold example to grade against")
-        outputs = run.outputs or {}
-        reference = example.outputs or {}
+    async def judge_evaluator(
+        *,
+        input: dict[str, str],
+        output: str,
+        expected_output: dict[str, str] | None,
+        **kwargs: Any,
+    ) -> list[Evaluation]:
+        if expected_output is None:
+            raise ValueError("judge_evaluator needs the gold item to grade against")
         verdict = await grade(
             judge,
             GradingInputs(
-                question=example.inputs["question"],
-                candidate_answer=outputs.get("answer", ""),
-                gold_answer=reference.get("answer", ""),
-                gold_sources=reference.get("sources", ""),
+                question=input["question"],
+                candidate_answer=output,
+                gold_answer=expected_output.get("answer", ""),
+                gold_sources=expected_output.get("sources", ""),
             ),
         )
-        results: list[dict[str, Any]] = [
-            {"key": "correctness", "score": verdict.passed, "comment": verdict.reasoning}
+        results = [
+            Evaluation(
+                name="correctness",
+                value=verdict.passed,
+                comment=verdict.reasoning,
+                data_type="BOOLEAN",
+            )
         ]
         if verdict.extra_claim_note:
             # Informational only -- flagged for the owner's spot-check, never
             # folded into `correctness`/`passed`.
             results.append(
-                {"key": "extra_claim", "score": False, "comment": verdict.extra_claim_note}
+                Evaluation(
+                    name="extra_claim",
+                    value=False,
+                    comment=verdict.extra_claim_note,
+                    data_type="BOOLEAN",
+                )
             )
-        return {"results": results}
+        return results
 
-    def metrics_evaluator(run: Run, example: Example | None) -> dict[str, Any]:
-        # #84: latency/token-usage/step-count, alongside `correctness` on the
-        # same run -- `target` already computed these, so no LLM call here.
-        return {"results": _metrics_results(run.outputs or {})}
-
-    return await aevaluate(
-        target,
-        data=_select_examples(client, cfg.langsmith_dataset, question_set),
-        evaluators=[judge_evaluator, metrics_evaluator],
-        experiment_prefix=experiment_prefix,
+    return client.run_experiment(
+        name=experiment_prefix,
+        data=_select_items(dataset.items, question_set),
+        task=task,
+        evaluators=[judge_evaluator],
+        run_evaluators=[_pass_rate],
         max_concurrency=concurrency,
-        client=client,
     )

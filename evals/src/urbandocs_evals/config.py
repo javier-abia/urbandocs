@@ -1,7 +1,7 @@
 """Environment configuration for the eval harness, fail-loud (#85).
 
 Every value the harness needs to reach the real engine, LiteLLM, and
-LangSmith comes from the environment -- nothing here defaults a model name
+Langfuse comes from the environment -- nothing here defaults a model name
 or a key, because #85 explicitly defers "exact model to test and exact
 judge model" to whatever production LiteLLM actually runs. A missing
 required variable is a startup error, not a silent fallback.
@@ -29,16 +29,16 @@ DEFAULT_DATASET_NAME = "urbandocs-gold-set"
 
 
 def dataset_name_from_env() -> str:
-    """The one place `LANGSMITH_DATASET` is read.
+    """The one place `LANGFUSE_DATASET` is read.
 
     Shared by `Config.from_env` (the `run` command) and `cli.py`'s
     `upload-dataset` command -- `upload-dataset` used to carry its own
-    hardcoded argparse default, which silently ignored `LANGSMITH_DATASET`
+    hardcoded argparse default, which silently ignored `LANGFUSE_DATASET`
     in `.env` and left `upload-dataset` and `run` pointed at two different
     datasets whenever the env var was set without also passing
     `--dataset-name` explicitly.
     """
-    return os.environ.get("LANGSMITH_DATASET", DEFAULT_DATASET_NAME).strip()
+    return os.environ.get("LANGFUSE_DATASET", DEFAULT_DATASET_NAME).strip()
 
 
 @dataclass(frozen=True)
@@ -48,7 +48,7 @@ class Config:
     mcp_url: str
     eval_model: str
     judge_model: str
-    langsmith_dataset: str
+    langfuse_dataset: str
     max_requests: int
 
     @classmethod
@@ -77,12 +77,15 @@ class Config:
         # guessing which one it is.
         mcp_url = _require("URBANDOCS_MCP_URL")
 
-        # LANGSMITH_API_KEY / LANGSMITH_TRACING / LANGSMITH_PROJECT are read
-        # directly by the `langsmith` SDK; required here only so a missing
+        # Read directly by the `langfuse` SDK; required here only so a missing
         # key fails before any model or MCP call runs, not partway through.
-        _require("LANGSMITH_API_KEY")
+        # LANGFUSE_BASE_URL too: the SDK would otherwise default to Langfuse
+        # Cloud, and where eval traces land shouldn't be an accident.
+        _require("LANGFUSE_PUBLIC_KEY")
+        _require("LANGFUSE_SECRET_KEY")
+        _require("LANGFUSE_BASE_URL")
 
-        langsmith_dataset = dataset_name_from_env()
+        langfuse_dataset = dataset_name_from_env()
 
         # "Runs until it produces a final prose answer with citations, or
         # stops" (#85) -- the "or stops" half needs an enforced cap, since
@@ -96,6 +99,6 @@ class Config:
             mcp_url=mcp_url,
             eval_model=eval_model,
             judge_model=judge_model,
-            langsmith_dataset=langsmith_dataset,
+            langfuse_dataset=langfuse_dataset,
             max_requests=max_requests,
         )
