@@ -15,6 +15,7 @@ the same run -- no second model call -- and a run-level `pass_rate` sums up
 
 from __future__ import annotations
 
+from functools import partial
 from typing import Any
 
 from langfuse import Evaluation, Langfuse
@@ -25,7 +26,7 @@ from pydantic_ai import Agent
 
 from urbandocs_evals.agent import AnswerResult, answer_question, build_agent
 from urbandocs_evals.config import Config
-from urbandocs_evals.judge import GradingInputs, build_judge, grade
+from urbandocs_evals.judge import GradingInputs, Verdict, build_judge, grade
 
 
 def _select_items(items: list[DatasetItem], question_set: str | None) -> list[DatasetItem]:
@@ -55,17 +56,49 @@ def _metrics_scores(result: AnswerResult) -> list[Evaluation]:
     ]
 
 
-def _pass_rate(*, item_results: list[ExperimentItemResult], **kwargs: Any) -> Evaluation:
-    """Run-level `pass_rate`: the share of items the judge passed."""
-    verdicts = [
-        bool(e.value) for r in item_results for e in r.evaluations if e.name == "correctness"
+def _verdict_scores(verdict: Verdict) -> list[Evaluation]:
+    """The judge's item scores: `correctness`, plus `extra_claim` when flagged."""
+    results = [
+        Evaluation(
+            name="correctness",
+            value=verdict.passed,
+            comment=verdict.reasoning,
+            data_type="BOOLEAN",
+        )
     ]
-    if not verdicts:
-        return Evaluation(name="pass_rate", value=None)
-    rate = sum(verdicts) / len(verdicts)
-    return Evaluation(
-        name="pass_rate", value=rate, comment=f"{sum(verdicts)}/{len(verdicts)} passed"
+    if verdict.extra_claim_note:
+        # `True` = the judge flagged an extra claim. Informational only --
+        # for the owner's spot-check, never folded into `correctness`.
+        results.append(
+            Evaluation(
+                name="extra_claim",
+                value=True,
+                comment=verdict.extra_claim_note,
+                data_type="BOOLEAN",
+            )
+        )
+    return results
+
+
+def _pass_rate(
+    *, item_results: list[ExperimentItemResult], attempted: int, **kwargs: Any
+) -> list[Evaluation]:
+    """Run-level `pass_rate`: judge passes over every item attempted.
+
+    The SDK drops an item whose task raised from `item_results`, so the
+    denominator is `attempted`, not `len(item_results)` -- a crash is a fail.
+    No items, no score.
+    """
+    if attempted == 0:
+        return []
+    passed = sum(
+        bool(e.value) for r in item_results for e in r.evaluations if e.name == "correctness"
     )
+    return [
+        Evaluation(
+            name="pass_rate", value=passed / attempted, comment=f"{passed}/{attempted} passed"
+        )
+    ]
 
 
 def run_experiment(
@@ -73,14 +106,14 @@ def run_experiment(
     client: Langfuse,
     *,
     concurrency: int = 1,
-    experiment_prefix: str = "urbandocs-eval",
+    experiment_name: str = "urbandocs-eval",
     question_set: str | None = None,
 ) -> ExperimentResult:
     # Exports pydantic-ai's model and MCP tool-call spans, so each item's
     # trace shows the full search/get loop, not just the final answer.
     Agent.instrument_all()
     judge = build_judge(cfg)
-    dataset = client.get_dataset(cfg.langfuse_dataset)
+    items = _select_items(client.get_dataset(cfg.langfuse_dataset).items, question_set)
 
     async def task(*, item: DatasetItem, **kwargs: Any) -> str:
         # A fresh agent (and fresh MCP session) per question -- simplest
@@ -115,32 +148,13 @@ def run_experiment(
                 gold_sources=expected_output.get("sources", ""),
             ),
         )
-        results = [
-            Evaluation(
-                name="correctness",
-                value=verdict.passed,
-                comment=verdict.reasoning,
-                data_type="BOOLEAN",
-            )
-        ]
-        if verdict.extra_claim_note:
-            # Informational only -- flagged for the owner's spot-check, never
-            # folded into `correctness`/`passed`.
-            results.append(
-                Evaluation(
-                    name="extra_claim",
-                    value=False,
-                    comment=verdict.extra_claim_note,
-                    data_type="BOOLEAN",
-                )
-            )
-        return results
+        return _verdict_scores(verdict)
 
     return client.run_experiment(
-        name=experiment_prefix,
-        data=_select_items(dataset.items, question_set),
+        name=experiment_name,
+        data=items,
         task=task,
         evaluators=[judge_evaluator],
-        run_evaluators=[_pass_rate],
+        run_evaluators=[partial(_pass_rate, attempted=len(items))],
         max_concurrency=concurrency,
     )

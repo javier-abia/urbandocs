@@ -1,14 +1,13 @@
 from datetime import UTC, datetime
+from types import SimpleNamespace
 
 from langfuse.api.commons.types.dataset_item import DatasetItem
 from langfuse.api.commons.types.dataset_status import DatasetStatus
-
-from types import SimpleNamespace
-
 from pydantic_ai.usage import RunUsage
 
 from urbandocs_evals.agent import AnswerResult
-from urbandocs_evals.run import _metrics_scores, _pass_rate, _select_items
+from urbandocs_evals.judge import Verdict
+from urbandocs_evals.run import _metrics_scores, _pass_rate, _select_items, _verdict_scores
 
 
 def _item(id_: str, set_: str, status: DatasetStatus = DatasetStatus.ACTIVE) -> DatasetItem:
@@ -66,19 +65,42 @@ def test_metrics_scores_of_a_stalled_run_are_zero_not_none() -> None:
     assert all(e.value is not None for e in _metrics_scores(result))
 
 
+def test_verdict_scores_without_extra_claim_is_correctness_alone() -> None:
+    scores = _verdict_scores(Verdict(passed=True, reasoning="ok", extra_claim_note=""))
+    assert [(e.name, e.value) for e in scores] == [("correctness", True)]
+
+
+def test_extra_claim_is_true_when_flagged_and_never_gates_correctness() -> None:
+    verdict = Verdict(passed=True, reasoning="ok", extra_claim_note="wrong date")
+    scores = _verdict_scores(verdict)
+    assert [(e.name, e.value, e.data_type) for e in scores] == [
+        ("correctness", True, "BOOLEAN"),
+        ("extra_claim", True, "BOOLEAN"),
+    ]
+    assert scores[1].comment == "wrong date"
+
+
 def _item_result(*verdicts: bool) -> SimpleNamespace:
     return SimpleNamespace(
         evaluations=[SimpleNamespace(name="correctness", value=v) for v in verdicts]
-        + [SimpleNamespace(name="extra_claim", value=False)]
+        + [SimpleNamespace(name="extra_claim", value=True)]
     )
 
 
 def test_pass_rate_counts_only_correctness() -> None:
     results = [_item_result(True), _item_result(False), _item_result(True)]
-    rate = _pass_rate(item_results=results)  # type: ignore[arg-type]
+    [rate] = _pass_rate(item_results=results, attempted=3)  # type: ignore[arg-type]
     assert rate.value == 2 / 3
     assert rate.comment == "2/3 passed"
 
 
-def test_pass_rate_with_no_verdicts_is_none() -> None:
-    assert _pass_rate(item_results=[]).value is None
+def test_pass_rate_counts_a_crashed_item_as_a_fail() -> None:
+    # The SDK omits an item whose task raised from `item_results`.
+    results = [_item_result(True), _item_result(True)]
+    [rate] = _pass_rate(item_results=results, attempted=3)  # type: ignore[arg-type]
+    assert rate.value == 2 / 3
+    assert rate.comment == "2/3 passed"
+
+
+def test_pass_rate_with_no_items_emits_no_score() -> None:
+    assert _pass_rate(item_results=[], attempted=0) == []

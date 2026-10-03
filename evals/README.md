@@ -10,11 +10,11 @@ isolated from production traffic/spend. A second, different model grades
 each answer pass/fail, all-or-nothing, against the gold answer and its
 required citations; it separately flags (without affecting pass/fail) any
 wrong extra claim the candidate volunteers beyond the gold answer, for
-spot-checking. Every run is a **Langfuse Experiment** against a
-**Langfuse Dataset** built from the gold set, so pass rate is comparable
-run-over-run through the Langfuse UI (summed up as a run-level
-`pass_rate` score), alongside three more per-question
-scores (#84): wall-clock **latency**, **input/output token usage**
+spot-checking (an `extra_claim` score, `True` when one is flagged). Every
+run is a **Langfuse Experiment** against a **Langfuse Dataset** built from
+the gold set, so pass rate is comparable run-over-run through the Langfuse
+UI (summed up as a run-level `pass_rate` score), alongside three more
+per-question scores (#84): wall-clock **latency**, **input/output token usage**
 (`RunResult.usage()`), and **step count** (`RunUsage.tool_calls`, the
 number of tool calls before a final answer). These stay observational —
 they don't gate `correctness` — so a change can be judged on more than
@@ -82,7 +82,7 @@ uv run urbandocs-evals run
 Manual, on demand — no CI wiring (#85's scope; this repo has no CI/CD
 pipeline and deploys are already manual). `--concurrency N` runs more than
 one question at a time (default 1: sequential, simplest thing that's safe
-against a fresh MCP session per question); `--experiment-prefix` names the
+against a fresh MCP session per question); `--experiment-name` names the
 experiment in Langfuse; `--set {easy,complex}` runs only that tier (default: the
 whole gold set). One Dataset either way — `--set` filters by each
 example's `set` metadata rather than pointing at a second Dataset, so
@@ -103,9 +103,9 @@ In scope: one fixed model under test, the model LiteLLM's production config
 actually runs — this is not a model-comparison matrix. Out of scope, and
 tracked separately:
 
-- Wiring LiteLLM's own production traffic into Langfuse tracing —
-  `docs/ops/deploy-runbook.md`'s deferred work, unrelated to this harness's
-  own tracing (each `run` call already produces one Langfuse Experiment).
+- Wiring LiteLLM's own production traffic into Langfuse tracing — not
+  covered by this harness or by `docs/ops/deploy-runbook.md`, and unrelated
+  to this harness's own tracing (each `run` call already produces one Langfuse Experiment).
 
 ## Layout
 
