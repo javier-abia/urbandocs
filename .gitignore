@@ -18,6 +18,9 @@ wheels/
 # says so.
 /corpus/
 
+# The MCP server's audit log (#65): one line per call, server-side only.
+/logs/
+
 # Normativa corpus: source PDFs plus their pdftotext conversions (~20M). Kept out
 # of the repo; docs/research/ cites paths under here, so obtain the PDFs and
 # re-run scripts/convert.py locally to reproduce those measurements.

@@ -13,15 +13,20 @@ are the gateway's job (#43).
 
 Fixed by #43: streamable HTTP, `127.0.0.1:8848`, path `/mcp`. Not the LAN --
 LiteLLM on the same box is the only caller.
+
+Every call is also appended to the server-side audit log (#65), see
+`urbandocs.audit`.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from mcp.server import MCPServer
 from mcp.server.transport_security import TransportSecuritySettings
 
+from urbandocs import audit, paths
 from urbandocs.read import GetResponse, PageRecord
 from urbandocs.read import get as _get
 from urbandocs.read import get_page as _get_page
@@ -30,6 +35,9 @@ from urbandocs.resolve import get_by_cite as _get_by_cite
 from urbandocs.search import RankedSection
 from urbandocs.search import search as _search
 from urbandocs.substrate import Substrate, load_substrate
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 HOST = "127.0.0.1"
 PORT = 8848
@@ -251,42 +259,57 @@ def _dedupe_ancestors(ranked: list[RankedSection]) -> SearchResponse:
     return SearchResponse(ancestors=list(pool), sections=sections)
 
 
-def build_server(substrate: Substrate) -> MCPServer:
-    """Register `search` against an already-loaded substrate.
+def wire_search(terms: list[str], substrate: Substrate) -> SearchResponse:
+    """`search` as it crosses the wire; the CLI prints the same (#65)."""
+    return _dedupe_ancestors(_search(terms, substrate))
+
+
+def build_server(substrate: Substrate, log: audit.AuditLog | None = None) -> MCPServer:
+    """Register the four tools against an already-loaded substrate.
 
     Split from `main` so a test can build a server over the fixture corpus
-    without going through `load_substrate`'s real-file resolution.
+    without going through `load_substrate`'s real-file resolution. With `log`,
+    every call is recorded there; without it, nothing is.
     """
     server = MCPServer("normativa")
 
+    def record[T](argv: list[str], call: Callable[[], T]) -> T:
+        return call() if log is None else log.record(argv, call)
+
     @server.tool(description=SEARCH_DESCRIPTION)
     def search(terms: list[str]) -> SearchResponse:
-        return _dedupe_ancestors(_search(terms, substrate))
+        return record(audit.search_argv(terms), lambda: wire_search(terms, substrate))
 
     @server.tool(description=GET_DESCRIPTION)
     def get(ids: list[str]) -> GetResponse:
-        return _get(ids, substrate)
+        return record(audit.get_argv(ids), lambda: _get(ids, substrate))
 
     @server.tool(description=GET_BY_CITE_DESCRIPTION)
     def get_by_cite(cite: str, doc: str | None = None) -> list[CiteCandidate]:
-        return _get_by_cite(cite, substrate, doc)
+        return record(
+            audit.get_by_cite_argv(cite, doc),
+            lambda: _get_by_cite(cite, substrate, doc),
+        )
 
     @server.tool(description=GET_PAGE_DESCRIPTION)
     def get_page(doc: str, page: int) -> list[PageRecord]:
-        return _get_page(doc, page, substrate)
+        return record(
+            audit.get_page_argv(doc, page), lambda: _get_page(doc, page, substrate)
+        )
 
     return server
 
 
 def main() -> None:
-    """Load the substrate and serve `search` over streamable HTTP.
+    """Load the substrate and serve the four tools over streamable HTTP.
 
     `load_substrate()` raises `SubstrateError` on a malformed corpus, and
     nothing here catches it: startup must fail loudly rather than serve as
     though the corpus had no hits (#56, #59).
     """
     substrate = load_substrate()
-    server = build_server(substrate)
+    log = audit.AuditLog(paths.audit_log(), audit.substrate_sha256(paths.corpus_tsv()))
+    server = build_server(substrate, log)
     server.run(
         transport="streamable-http",
         host=HOST,

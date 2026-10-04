@@ -63,3 +63,8 @@ def tuned_dir(root: str | Path | None = None) -> Path:
 def corpus_tsv(root: str | Path | None = None) -> Path:
     """Stage 2's output: the retrieval substrate. Derived, gitignored."""
     return repo_root(root) / "corpus" / "corpus.tsv"
+
+
+def audit_log(root: str | Path | None = None) -> Path:
+    """The server's audit log, one JSON line per call (#65). Gitignored."""
+    return repo_root(root) / "logs" / "audit.jsonl"
