@@ -73,6 +73,7 @@ class Verdict(BaseModel):
 def build_judge(cfg: Config) -> Agent[None, Verdict]:
     return Agent(
         build_litellm_model(cfg, cfg.judge_model),
+        name="grade-answer",
         output_type=Verdict,
         system_prompt=JUDGE_SYSTEM_PROMPT,
     )

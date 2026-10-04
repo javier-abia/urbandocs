@@ -65,6 +65,7 @@ def build_agent(cfg: Config) -> Agent[None, str]:
     )
     return Agent(
         build_litellm_model(cfg, cfg.eval_model),
+        name="answer-normativa-question",
         toolsets=[toolset],
         system_prompt=SYSTEM_PROMPT,
     )
@@ -86,12 +87,12 @@ async def answer_question(
 
     "Runs until it produces a final prose answer with citations, or stops"
     (#85) -- `max_requests` is the enforced cap for that second case. A run
-    that hits it produces no `RunResult` to read usage from, so it reports
+    that hits it produces no `AgentRunResult` to read usage from, so it reports
     zeroed usage rather than raising -- the judge already fails it on
     content alone. Wall-clock is timed around the call itself; token counts
     and `RunUsage.tool_calls` (#84's step count -- pydantic-ai's own count of
-    successful tool calls) come straight off `RunResult.usage` -- a
-    property in pydantic-ai 2.27.1, not a method.
+    successful tool calls) come straight off `AgentRunResult.usage` -- a
+    property in pydantic-ai 2.52.0, not a method.
     """
     start = time.monotonic()
     try:

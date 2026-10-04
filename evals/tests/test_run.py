@@ -1,65 +1,106 @@
-from urbandocs_evals.run import _metrics_results, _select_examples
+from datetime import UTC, datetime
+from types import SimpleNamespace
+
+from langfuse.api.commons.types.dataset_item import DatasetItem
+from langfuse.api.commons.types.dataset_status import DatasetStatus
+from pydantic_ai.usage import RunUsage
+
+from urbandocs_evals.agent import AnswerResult
+from urbandocs_evals.judge import Verdict
+from urbandocs_evals.run import _metrics_scores, _pass_rate, _select_items, _verdict_scores
 
 
-class _RecordingClient:
-    def __init__(self) -> None:
-        self.calls: list[tuple[str, dict[str, str]]] = []
+def _item(id_: str, set_: str, status: DatasetStatus = DatasetStatus.ACTIVE) -> DatasetItem:
+    now = datetime(2026, 10, 1, tzinfo=UTC)
+    return DatasetItem(
+        id=id_,
+        status=status,
+        input={"question": "¿Q?"},
+        expected_output={"answer": "a", "sources": "s"},
+        metadata={"set": set_, "number": "1"},
+        dataset_id="ds",
+        dataset_name="urbandocs-gold-set",
+        created_at=now,
+        updated_at=now,
+        media_references=[],
+    )
 
-    def list_examples(self, *, dataset_name: str, metadata: dict[str, str]) -> str:
-        self.calls.append((dataset_name, metadata))
-        return "filtered-examples"  # stand-in for the real Example iterator
 
-
-def test_no_set_returns_dataset_name_unfiltered() -> None:
-    client = _RecordingClient()
-    result = _select_examples(client, "urbandocs-gold-set", None)  # type: ignore[arg-type]
-    assert result == "urbandocs-gold-set"
-    assert client.calls == []
+def test_no_set_returns_every_active_item() -> None:
+    items = [_item("a", "easy"), _item("b", "complex")]
+    assert [i.id for i in _select_items(items, None)] == ["a", "b"]
 
 
 def test_set_filters_by_metadata() -> None:
-    client = _RecordingClient()
-    result = _select_examples(client, "urbandocs-gold-set", "easy")  # type: ignore[arg-type]
-    assert result == "filtered-examples"
-    assert client.calls == [("urbandocs-gold-set", {"set": "easy"})]
+    items = [_item("a", "easy"), _item("b", "complex")]
+    assert [i.id for i in _select_items(items, "easy")] == ["a"]
 
 
-def test_metrics_results_names_targets_outputs_as_feedback_keys() -> None:
-    outputs = {
-        "answer": "irrelevant here",
-        "latency_seconds": 4.5,
-        "input_tokens": 1200,
-        "output_tokens": 80,
-        "tool_calls": 3,
-    }
-    assert _metrics_results(outputs) == [
-        {"key": "latency_seconds", "score": 4.5},
-        {"key": "input_tokens", "value": 1200},
-        {"key": "output_tokens", "value": 80},
-        {"key": "step_count", "score": 3},
+def test_archived_items_never_run() -> None:
+    # `upload_dataset` archives an item dropped from the gold set rather than
+    # deleting it (which would erase its run history), so selection must skip it.
+    items = [_item("a", "easy"), _item("gone", "easy", DatasetStatus.ARCHIVED)]
+    assert [i.id for i in _select_items(items, None)] == ["a"]
+    assert [i.id for i in _select_items(items, "easy")] == ["a"]
+
+
+def test_metrics_scores_name_the_run_metrics_as_numeric_scores() -> None:
+    result = AnswerResult(
+        answer="irrelevant here",
+        usage=RunUsage(input_tokens=160_838, output_tokens=80, tool_calls=3),
+        elapsed_seconds=4.5,
+    )
+    assert [(e.name, e.value, e.data_type) for e in _metrics_scores(result)] == [
+        ("latency_seconds", 4.5, "NUMERIC"),
+        ("input_tokens", 160_838, "NUMERIC"),
+        ("output_tokens", 80, "NUMERIC"),
+        ("step_count", 3, "NUMERIC"),
     ]
 
 
-def test_metrics_results_token_counts_ride_value_not_score() -> None:
-    # LangSmith rejects a feedback `score` outside +-99999.9999 (422 on
-    # ingest) -- a bound real prompt-token counts clear routinely, so token
-    # counts must never land on `score`.
-    big = {"input_tokens": 160_838, "output_tokens": 149_105}
-    results = _metrics_results(big)
-    by_key = {r["key"]: r for r in results}
-    assert by_key["input_tokens"] == {"key": "input_tokens", "value": 160_838}
-    assert by_key["output_tokens"] == {"key": "output_tokens", "value": 149_105}
-    assert "score" not in by_key["input_tokens"]
-    assert "score" not in by_key["output_tokens"]
+def test_metrics_scores_of_a_stalled_run_are_zero_not_none() -> None:
+    # A run that hits the request cap reports zeroed usage (#84); a NUMERIC
+    # score can't hold `None`.
+    result = AnswerResult(answer="[stopped]", usage=RunUsage(), elapsed_seconds=1.0)
+    assert all(e.value is not None for e in _metrics_scores(result))
 
 
-def test_metrics_results_tolerates_missing_outputs() -> None:
-    # A stalled run's `target` output still has these keys (#84's
-    # zeroed-usage case), but the evaluator itself must not raise on a
-    # `Run.outputs` shaped some other way.
-    assert _metrics_results({}) == [
-        {"key": "latency_seconds", "score": None},
-        {"key": "input_tokens", "value": None},
-        {"key": "output_tokens", "value": None},
-        {"key": "step_count", "score": None},
+def test_verdict_scores_without_extra_claim_is_correctness_alone() -> None:
+    scores = _verdict_scores(Verdict(passed=True, reasoning="ok", extra_claim_note=""))
+    assert [(e.name, e.value) for e in scores] == [("correctness", True)]
+
+
+def test_extra_claim_is_true_when_flagged_and_never_gates_correctness() -> None:
+    verdict = Verdict(passed=True, reasoning="ok", extra_claim_note="wrong date")
+    scores = _verdict_scores(verdict)
+    assert [(e.name, e.value, e.data_type) for e in scores] == [
+        ("correctness", True, "BOOLEAN"),
+        ("extra_claim", True, "BOOLEAN"),
     ]
+    assert scores[1].comment == "wrong date"
+
+
+def _item_result(*verdicts: bool) -> SimpleNamespace:
+    return SimpleNamespace(
+        evaluations=[SimpleNamespace(name="correctness", value=v) for v in verdicts]
+        + [SimpleNamespace(name="extra_claim", value=True)]
+    )
+
+
+def test_pass_rate_counts_only_correctness() -> None:
+    results = [_item_result(True), _item_result(False), _item_result(True)]
+    [rate] = _pass_rate(item_results=results, attempted=3)  # type: ignore[arg-type]
+    assert rate.value == 2 / 3
+    assert rate.comment == "2/3 passed"
+
+
+def test_pass_rate_counts_a_crashed_item_as_a_fail() -> None:
+    # The SDK omits an item whose task raised from `item_results`.
+    results = [_item_result(True), _item_result(True)]
+    [rate] = _pass_rate(item_results=results, attempted=3)  # type: ignore[arg-type]
+    assert rate.value == 2 / 3
+    assert rate.comment == "2/3 passed"
+
+
+def test_pass_rate_with_no_items_emits_no_score() -> None:
+    assert _pass_rate(item_results=[], attempted=0) == []

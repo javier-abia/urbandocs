@@ -10,14 +10,17 @@ isolated from production traffic/spend. A second, different model grades
 each answer pass/fail, all-or-nothing, against the gold answer and its
 required citations; it separately flags (without affecting pass/fail) any
 wrong extra claim the candidate volunteers beyond the gold answer, for
-spot-checking. Every run is a **LangSmith Experiment** against a
-**LangSmith Dataset** built from the gold set, so pass rate is comparable
-run-over-run through the LangSmith UI, alongside three more per-question
-feedback keys (#84): wall-clock **latency**, **input/output token usage**
+spot-checking (an `extra_claim` score, `True` when one is flagged). Every
+run is a **Langfuse Experiment** against a **Langfuse Dataset** built from
+the gold set, so pass rate is comparable run-over-run through the Langfuse
+UI (summed up as a run-level `pass_rate` score), alongside three more
+per-question scores (#84): wall-clock **latency**, **input/output token usage**
 (`RunResult.usage()`), and **step count** (`RunUsage.tool_calls`, the
 number of tool calls before a final answer). These stay observational —
 they don't gate `correctness` — so a change can be judged on more than
-pass/fail.
+pass/fail. Each item's trace also carries the agent's full model and MCP
+tool-call tree (pydantic-ai's OpenTelemetry instrumentation), so a failed
+answer can be read back step by step.
 
 Self-contained project, own `pyproject.toml`/`uv.lock`, same pattern as
 `tools/docling-convert/` — resolved independently of the root project, not
@@ -49,21 +52,26 @@ what each one is for. In short:
   `LITELLM_BASE_URL`, since that's the chat-completions base and the two
   aren't the same URL. Point at the engine directly instead if running
   from the box itself.
-- `LANGSMITH_API_KEY` (and friends) — read directly by the `langsmith` SDK.
+- `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` / `LANGFUSE_BASE_URL` — read
+  directly by the `langfuse` SDK. The base URL is required rather than
+  left to the SDK's Langfuse Cloud default.
 - `EVAL_MAX_REQUESTS` — optional, defaults to 50. Caps model requests per
   question, the enforced form of "runs until it produces a final answer,
   or stops" (#85).
 
 ## Run
 
-**Once**, to create the LangSmith Dataset from the gold-set CSVs:
+**Once**, and again whenever the gold set changes, to sync the Langfuse
+Dataset to the gold-set CSVs:
 
 ```sh
 uv run urbandocs-evals upload-dataset
 ```
 
-Idempotent — a dataset that already exists is left untouched; pass
-`--recreate` to drop and rebuild it after the gold set changes.
+Idempotent — items upsert on a stable `<dataset>-<set>-<number>` id, so an
+edited question updates in place (Langfuse versions items, so past runs
+keep what they were graded against). A question removed from the CSVs is
+archived, not deleted, and `run` skips it.
 
 **Every eval run**, against that dataset, as a new Experiment:
 
@@ -74,12 +82,12 @@ uv run urbandocs-evals run
 Manual, on demand — no CI wiring (#85's scope; this repo has no CI/CD
 pipeline and deploys are already manual). `--concurrency N` runs more than
 one question at a time (default 1: sequential, simplest thing that's safe
-against a fresh MCP session per question); `--experiment-prefix` names the
-run in LangSmith; `--set {easy,complex}` runs only that tier (default: the
+against a fresh MCP session per question); `--experiment-name` names the
+experiment in Langfuse; `--set {easy,complex}` runs only that tier (default: the
 whole gold set). One Dataset either way — `--set` filters by each
 example's `set` metadata rather than pointing at a second Dataset, so
 pass rate stays comparable across easy-only, complex-only and full runs
-in the same LangSmith UI:
+in the same Langfuse UI:
 
 ```sh
 uv run urbandocs-evals run --set easy
@@ -95,9 +103,9 @@ In scope: one fixed model under test, the model LiteLLM's production config
 actually runs — this is not a model-comparison matrix. Out of scope, and
 tracked separately:
 
-- Wiring LiteLLM's own production traffic into LangSmith tracing —
-  `docs/ops/deploy-runbook.md`'s deferred work, unrelated to this harness's
-  own tracing (each `run` call already produces one LangSmith Experiment).
+- Wiring LiteLLM's own production traffic into Langfuse tracing — not
+  covered by this harness or by `docs/ops/deploy-runbook.md`, and unrelated
+  to this harness's own tracing (each `run` call already produces one Langfuse Experiment).
 
 ## Layout
 
@@ -105,10 +113,10 @@ tracked separately:
 evals/
 ├── src/urbandocs_evals/
 │   ├── config.py    # env -> Config, fail-loud
-│   ├── dataset.py   # gold-set CSVs -> LangSmith Dataset
+│   ├── dataset.py   # gold-set CSVs -> Langfuse Dataset
 │   ├── agent.py      # the agent under test: LiteLLM model + real MCP toolset
 │   ├── judge.py       # the grading model: pass/fail, all-or-nothing
-│   ├── run.py          # one aevaluate() call: target + judge evaluator
+│   ├── run.py          # one run_experiment() call: task + judge evaluator
 │   └── cli.py            # `upload-dataset` / `run`
 └── tests/            # unit tests only -- CSV joining, prompt formatting,
                        # config validation. No network, no live model calls.

@@ -8,7 +8,9 @@ REQUIRED_ENV = {
     "URBANDOCS_MCP_URL": "https://litellm.example/normativa/mcp",
     "EVAL_MODEL": "gpt-4.1",
     "EVAL_JUDGE_MODEL": "claude-opus",
-    "LANGSMITH_API_KEY": "ls-key",  # pragma: allowlist secret
+    "LANGFUSE_PUBLIC_KEY": "pk-lf-key",
+    "LANGFUSE_SECRET_KEY": "sk-lf-key",  # pragma: allowlist secret
+    "LANGFUSE_BASE_URL": "https://langfuse.example",
 }
 
 
@@ -20,13 +22,13 @@ def _set_env(monkeypatch: pytest.MonkeyPatch, **overrides: str) -> None:
 
 def test_from_env_reads_required_vars(monkeypatch: pytest.MonkeyPatch) -> None:
     _set_env(monkeypatch)
-    monkeypatch.delenv("LANGSMITH_DATASET", raising=False)
+    monkeypatch.delenv("LANGFUSE_DATASET", raising=False)
     monkeypatch.delenv("EVAL_MAX_REQUESTS", raising=False)
     cfg = Config.from_env()
     assert cfg.eval_model == "gpt-4.1"
     assert cfg.judge_model == "claude-opus"
     assert cfg.mcp_url == "https://litellm.example/normativa/mcp"
-    assert cfg.langsmith_dataset == "urbandocs-gold-set"
+    assert cfg.langfuse_dataset == "urbandocs-gold-set"
     assert cfg.max_requests == 50
 
 
@@ -46,6 +48,14 @@ def test_from_env_requires_mcp_url_explicitly(monkeypatch: pytest.MonkeyPatch) -
         Config.from_env()
 
 
+def test_from_env_requires_langfuse_base_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The SDK would silently default to Langfuse Cloud; where traces land is explicit.
+    _set_env(monkeypatch)
+    monkeypatch.delenv("LANGFUSE_BASE_URL", raising=False)
+    with pytest.raises(ConfigError, match="LANGFUSE_BASE_URL"):
+        Config.from_env()
+
+
 def test_from_env_rejects_judge_same_as_eval_model(monkeypatch: pytest.MonkeyPatch) -> None:
     _set_env(monkeypatch, EVAL_JUDGE_MODEL="gpt-4.1")
     with pytest.raises(ConfigError, match="self-preference"):
@@ -61,12 +71,12 @@ def test_from_env_max_requests_override(monkeypatch: pytest.MonkeyPatch) -> None
 def test_dataset_name_from_env_matches_config_default(monkeypatch: pytest.MonkeyPatch) -> None:
     # `run` (via `Config.from_env`) and `upload-dataset` (via this function
     # directly) must agree on which dataset they mean when only
-    # LANGSMITH_DATASET is set -- a prior bug had `upload-dataset` carry its
+    # LANGFUSE_DATASET is set -- a prior bug had `upload-dataset` carry its
     # own hardcoded argparse default that ignored this env var entirely.
-    monkeypatch.delenv("LANGSMITH_DATASET", raising=False)
+    monkeypatch.delenv("LANGFUSE_DATASET", raising=False)
     assert dataset_name_from_env() == "urbandocs-gold-set"
 
-    monkeypatch.setenv("LANGSMITH_DATASET", "my-custom-set")
+    monkeypatch.setenv("LANGFUSE_DATASET", "my-custom-set")
     assert dataset_name_from_env() == "my-custom-set"
-    _set_env(monkeypatch, LANGSMITH_DATASET="my-custom-set")
-    assert Config.from_env().langsmith_dataset == dataset_name_from_env()
+    _set_env(monkeypatch, LANGFUSE_DATASET="my-custom-set")
+    assert Config.from_env().langfuse_dataset == dataset_name_from_env()
