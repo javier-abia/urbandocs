@@ -42,15 +42,23 @@ Two settings are worth knowing before they surprise you:
 
 ## Commit hooks
 
-After `uv sync`, one more command per clone:
+Install the hook runner once per machine, then the hooks once per clone,
+**from the main checkout, never from a worktree**:
 
 ```sh
-uv run pre-commit install
+uv tool install pre-commit
+pre-commit install
 ```
+
+The hook script hardcodes the Python of whichever `pre-commit` installed it,
+and every worktree shares the main checkout's `.git/hooks/`. Run
+`uv run pre-commit install` in a worktree and the hook points at that
+worktree's `.venv`; once the worktree is removed, every commit fails with
+`` `pre-commit` not found ``. If you see that, re-run the two commands above.
 
 Skipping it is not fatal — CI runs the same config over every file — but you
 will find out in review rather than in a second. Git hooks live in `.git/`,
-which is not cloned and not shared, so this is per-clone.
+which is not cloned, so this is per-clone.
 
 The hooks **fix rather than reject** wherever they can, because agents commit
 here and a failure nobody can diagnose becomes a retry loop. When a hook edits
