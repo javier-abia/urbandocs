@@ -11,9 +11,11 @@
 # can only reject -- `ty`, `pytest`, and the ruff rules with no safe fix --
 # lives in CI (#52), not here.
 #
-# Install (once per clone):
+# Install (runner once per machine, hooks once per clone, from the main
+# checkout -- a worktree's `.venv` would get baked into the shared hook):
 #
-#     uv run pre-commit install
+#     uv tool install pre-commit
+#     pre-commit install
 #
 # See AGENTS.md. A clone that skips this is silently unhooked; CI runs the
 # same config over every file, so nothing lands unchecked either way.

@@ -1,0 +1,110 @@
+[project]
+name = "urbandocs"
+
+[[module]]
+id = "conversion"
+label = "PDF conversion"
+description = "Stage 1: converting the normativa PDFs into docling JSON with the tuned docling pipeline — OCR decisions, pipeline options, docling versions, and adding a new document's PDF and its committed conversion. Not the parsing of that JSON into records, which is ingest."
+paths = ["tools/docling-convert/**", "documentos/**"]
+
+[[module]]
+id = "ingest"
+label = "Ingest & corpus gates"
+description = "Stage 2: turning the docling JSON into the corpus.tsv substrate and its provenance sidecar — reading order, cite parsing, record ids, parent_id nesting, the norm column — plus the check_corpus and check_structure gates, rebuild determinism, and the test fixture corpus derived from it."
+paths = [
+  "src/urbandocs/ingest.py",
+  "src/urbandocs/check_corpus.py",
+  "src/urbandocs/check_structure.py",
+  "tests/fixtures/**",
+  "tests/unit/test_cite_path.py",
+  "tests/unit/test_parse_cite.py",
+  "tests/unit/test_fixture_corpus.py",
+]
+
+[[module]]
+id = "substrate"
+label = "Substrate loading"
+description = "Loading corpus.tsv into memory at startup: the fail-loud loader, the by_id, by_cite, by_page and children indexes, ancestor_chain, per-document page counts, and locating the repo's data paths. Not what any retrieval operation does with those indexes."
+paths = [
+  "src/urbandocs/__init__.py",
+  "src/urbandocs/substrate.py",
+  "src/urbandocs/paths.py",
+  "tests/conftest.py",
+  "tests/unit/test_substrate.py",
+  "tests/unit/test_paths.py",
+]
+
+[[module]]
+id = "search"
+label = "Search & read"
+description = "The retrieval operations' behaviour and payloads: sweeping and ranking sections for search, the content and size of what search returns (ancestors, matched_children, result counts, caps), resolving printed cites with get_by_cite, reading provision text, ancestors, children and pages with get and get_page, and the fidelity disclosure rendered on returned text."
+paths = [
+  "src/urbandocs/search.py",
+  "src/urbandocs/resolve.py",
+  "src/urbandocs/read.py",
+  "tests/unit/test_search.py",
+  "tests/unit/test_resolve.py",
+  "tests/unit/test_read.py",
+]
+
+[[module]]
+id = "server"
+label = "MCP server"
+description = "The MCP transport adapter, with no retrieval logic of its own: exposing search, get, get_by_cite and get_page as MCP tools over streamable HTTP, the tool descriptions agents read, loopback binding and DNS-rebinding protection, and server startup."
+paths = ["src/urbandocs/server.py", "tests/unit/test_server.py"]
+
+[[module]]
+id = "clients"
+label = "Deploy & agent clients"
+description = "Running the engine for the practice and the agents that call it: deploying the server on the box, the LiteLLM gateway and its keys, and how client agents such as Codex and opencode drive the MCP loop — their context replay, prompt caching, subagent delegation and per-session token cost."
+paths = ["docs/ops/**"]
+
+[[module]]
+id = "evals"
+label = "Evals"
+description = "The end-to-end eval harness: the gold question and answer set, the pydantic-ai agent that answers it over MCP, the LLM judge, baseline agent variants to compare against, and Langfuse datasets, experiments and scores."
+paths = ["evals/**", "docs/eval-*.csv"]
+
+[[module]]
+id = "research"
+label = "Research & evidence"
+description = "The frozen evidence behind past design decisions: the scripts in scripts/ and their research notes on OCR fidelity, line coverage, list-marker recovery, pointer counts, section geometry and the retired navigable index. Not new spikes about the live engine, its clients or the eval harness."
+paths = ["docs/research/**", "scripts/**"]
+
+[[module]]
+id = "tooling"
+label = "Dev tooling & CI"
+description = "The development environment rather than the product: the ruff, ty and pytest gates, pre-commit hooks, the CI workflow, dependency locking, AGENTS.md and agent skills, and the configuration and context overhead of the coding-agent sessions used to work on this repo."
+paths = [
+  ".github/**",
+  ".pre-commit-config.yaml",
+  ".secrets.baseline",
+  "pyproject.toml",
+  "uv.lock",
+  "AGENTS.md",
+  "docs/agents/**",
+]
+
+[[edge]]
+from = "ingest"      # ingest parses the docling JSON conversion writes
+to = "conversion"
+
+[[edge]]
+from = "substrate"   # substrate loads the corpus.tsv ingest writes
+to = "ingest"
+
+[[edge]]
+from = "search"      # search, get and get_by_cite run over the loaded indexes
+to = "substrate"
+
+[[edge]]
+from = "server"      # the server calls the retrieval operations
+to = "search"
+
+[[edge]]
+from = "clients"     # client agents call the MCP tools through LiteLLM
+to = "server"
+
+[[edge]]
+from = "evals"       # the eval agent calls the real MCP server
+to = "server"

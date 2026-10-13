@@ -35,9 +35,8 @@ dependencies = [
 #          major-pinned (#50). It is only the hook *runner* -- the hooks
 #          themselves are pinned by `rev` in `.pre-commit-config.yaml` -- so
 #          the blast radius of a minor bump is the runner's own CLI. Listed
-#          here rather than assumed globally so that `uv sync` alone leaves a
-#          clone able to run `uv run pre-commit install`, which is the whole
-#          claim AGENTS.md makes about one command.
+#          here so CI's `uv run pre-commit run` gets a locked runner; the git
+#          hook itself uses a global `uv tool install pre-commit` (AGENTS.md).
 [dependency-groups]
 dev = [
     "pre-commit>=4,<5",
