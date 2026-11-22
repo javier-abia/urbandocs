@@ -49,12 +49,14 @@ def test_metrics_scores_name_the_run_metrics_as_numeric_scores() -> None:
         answer="irrelevant here",
         usage=RunUsage(input_tokens=160_838, output_tokens=80, tool_calls=3),
         elapsed_seconds=4.5,
+        peak_context_tokens=71_000,
     )
     assert [(e.name, e.value, e.data_type) for e in _metrics_scores(result)] == [
         ("latency_seconds", 4.5, "NUMERIC"),
         ("input_tokens", 160_838, "NUMERIC"),
         ("output_tokens", 80, "NUMERIC"),
         ("step_count", 3, "NUMERIC"),
+        ("peak_context_tokens", 71_000, "NUMERIC"),
     ]
 
 
