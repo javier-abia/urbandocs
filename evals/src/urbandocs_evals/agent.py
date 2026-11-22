@@ -18,12 +18,14 @@ technical architect and must ground every claim in a citation.
 from __future__ import annotations
 
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 from pydantic_ai import Agent, UsageLimitExceeded
 from pydantic_ai.mcp import MCPToolset
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openai import OpenAIProvider
+from pydantic_ai.messages import ModelMessage, ModelResponse
 from pydantic_ai.usage import RunUsage, UsageLimits
 
 from urbandocs_evals.config import Config
@@ -78,6 +80,15 @@ class AnswerResult:
     answer: str
     usage: RunUsage
     elapsed_seconds: float
+    peak_context_tokens: int = 0
+
+
+def _peak_context_tokens(messages: Sequence[ModelMessage]) -> int:
+    """Largest single-request input: the context-window high-water mark."""
+    return max(
+        (m.usage.input_tokens for m in messages if isinstance(m, ModelResponse)),
+        default=0,
+    )
 
 
 async def answer_question(
@@ -110,4 +121,5 @@ async def answer_question(
         answer=result.output,
         usage=result.usage,
         elapsed_seconds=time.monotonic() - start,
+        peak_context_tokens=_peak_context_tokens(result.all_messages()),
     )

@@ -53,6 +53,9 @@ def _metrics_scores(result: AnswerResult) -> list[Evaluation]:
         Evaluation(name="input_tokens", value=result.usage.input_tokens, data_type="NUMERIC"),
         Evaluation(name="output_tokens", value=result.usage.output_tokens, data_type="NUMERIC"),
         Evaluation(name="step_count", value=result.usage.tool_calls, data_type="NUMERIC"),
+        Evaluation(
+            name="peak_context_tokens", value=result.peak_context_tokens, data_type="NUMERIC"
+        ),
     ]
 
 
