@@ -50,6 +50,7 @@ class Config:
     judge_model: str
     langfuse_dataset: str
     max_requests: int
+    worker_model: str | None = None
 
     @classmethod
     def from_env(cls) -> Config:
@@ -93,6 +94,9 @@ class Config:
         max_requests_raw = os.environ.get("EVAL_MAX_REQUESTS", "").strip()
         max_requests = int(max_requests_raw) if max_requests_raw else DEFAULT_MAX_REQUESTS
 
+        # Only the workspace variant needs it; `run` fails loud there if unset.
+        worker_model = os.environ.get("EVAL_WORKER_MODEL", "").strip() or None
+
         return cls(
             litellm_base_url=litellm_base_url,
             litellm_api_key=litellm_api_key,
@@ -101,4 +105,5 @@ class Config:
             judge_model=judge_model,
             langfuse_dataset=langfuse_dataset,
             max_requests=max_requests,
+            worker_model=worker_model,
         )

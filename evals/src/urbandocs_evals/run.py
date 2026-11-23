@@ -25,8 +25,11 @@ from langfuse.experiment import ExperimentItemResult, ExperimentResult
 from pydantic_ai import Agent
 
 from urbandocs_evals.agent import AnswerResult, answer_question, build_agent
-from urbandocs_evals.config import Config
+from urbandocs_evals.config import Config, ConfigError
 from urbandocs_evals.judge import GradingInputs, Verdict, build_judge, grade
+from urbandocs_evals.workspace import answer_question_workspace
+
+AGENTS = ("baseline", "workspace")
 
 
 def _select_items(items: list[DatasetItem], question_set: str | None) -> list[DatasetItem]:
@@ -47,8 +50,8 @@ def _select_items(items: list[DatasetItem], question_set: str | None) -> list[Da
 
 
 def _metrics_scores(result: AnswerResult) -> list[Evaluation]:
-    """The #84 scores for one agent run."""
-    return [
+    """The #84 scores for one agent run, plus the worker's when there is one."""
+    scores = [
         Evaluation(name="latency_seconds", value=result.elapsed_seconds, data_type="NUMERIC"),
         Evaluation(name="input_tokens", value=result.usage.input_tokens, data_type="NUMERIC"),
         Evaluation(name="output_tokens", value=result.usage.output_tokens, data_type="NUMERIC"),
@@ -57,6 +60,18 @@ def _metrics_scores(result: AnswerResult) -> list[Evaluation]:
             name="peak_context_tokens", value=result.peak_context_tokens, data_type="NUMERIC"
         ),
     ]
+    if w := result.worker:
+        scores += [
+            Evaluation(name="worker_input_tokens", value=w.usage.input_tokens, data_type="NUMERIC"),
+            Evaluation(
+                name="worker_output_tokens", value=w.usage.output_tokens, data_type="NUMERIC"
+            ),
+            Evaluation(name="worker_step_count", value=w.usage.tool_calls, data_type="NUMERIC"),
+            Evaluation(
+                name="worker_peak_context_tokens", value=w.peak_context_tokens, data_type="NUMERIC"
+            ),
+        ]
+    return scores
 
 
 def _verdict_scores(verdict: Verdict) -> list[Evaluation]:
@@ -111,7 +126,10 @@ def run_experiment(
     concurrency: int = 1,
     experiment_name: str = "urbandocs-eval",
     question_set: str | None = None,
+    agent: str = "baseline",
 ) -> ExperimentResult:
+    if agent == "workspace" and cfg.worker_model is None:
+        raise ConfigError("--agent workspace needs EVAL_WORKER_MODEL")
     # Exports pydantic-ai's model and MCP tool-call spans, so each item's
     # trace shows the full search/get loop, not just the final answer.
     Agent.instrument_all()
@@ -122,9 +140,16 @@ def run_experiment(
         # A fresh agent (and fresh MCP session) per question -- simplest
         # thing that is safe under concurrency; 20 questions makes the
         # reconnect cost a non-issue.
-        agent = build_agent(cfg)
         question = (item.input or {})["question"]
-        result = await answer_question(agent, question, max_requests=cfg.max_requests)
+        if agent == "workspace":
+            assert cfg.worker_model is not None
+            result = await answer_question_workspace(
+                cfg, question, worker_model=cfg.worker_model, max_requests=cfg.max_requests
+            )
+        else:
+            result = await answer_question(
+                build_agent(cfg), question, max_requests=cfg.max_requests
+            )
         # Scored on the item's task span, since only the task sees usage; the
         # trace output stays the answer alone.
         for score in _metrics_scores(result):
@@ -160,4 +185,5 @@ def run_experiment(
         evaluators=[judge_evaluator],
         run_evaluators=[partial(_pass_rate, attempted=len(items))],
         max_concurrency=concurrency,
+        metadata={"agent": agent, "worker_model": cfg.worker_model or ""},
     )

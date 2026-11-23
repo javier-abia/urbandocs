@@ -20,6 +20,7 @@ from __future__ import annotations
 import time
 from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from pydantic_ai import Agent, UsageLimitExceeded
 from pydantic_ai.mcp import MCPToolset
@@ -29,6 +30,9 @@ from pydantic_ai.messages import ModelMessage, ModelResponse
 from pydantic_ai.usage import RunUsage, UsageLimits
 
 from urbandocs_evals.config import Config
+
+if TYPE_CHECKING:
+    from urbandocs_evals.workspace import WorkerStats
 
 SYSTEM_PROMPT = (
     "You are a technical architect's assistant, answering questions about "
@@ -81,6 +85,7 @@ class AnswerResult:
     usage: RunUsage
     elapsed_seconds: float
     peak_context_tokens: int = 0
+    worker: WorkerStats | None = None  # workspace variant only
 
 
 def _peak_context_tokens(messages: Sequence[ModelMessage]) -> int:

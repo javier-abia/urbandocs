@@ -11,7 +11,7 @@ from langfuse import Langfuse
 
 from urbandocs_evals.config import Config, ConfigError, dataset_name_from_env
 from urbandocs_evals.dataset import upload_dataset
-from urbandocs_evals.run import run_experiment
+from urbandocs_evals.run import AGENTS, run_experiment
 
 DOCS_DIR = Path(__file__).resolve().parents[3] / "docs"
 
@@ -39,6 +39,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
             concurrency=args.concurrency,
             experiment_name=args.experiment_name,
             question_set=args.set,
+            agent=args.agent,
         )
     finally:
         # Short-lived process: export buffered spans and scores before exit.
@@ -84,6 +85,15 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["easy", "complex"],
         default=None,
         help="run only this question set (default: the whole gold set)",
+    )
+    run.add_argument(
+        "--agent",
+        choices=AGENTS,
+        default="baseline",
+        help=(
+            "baseline: one agent on the raw MCP tools; workspace: an outer agent "
+            "with one `research` tool backed by a worker on $EVAL_WORKER_MODEL"
+        ),
     )
     run.set_defaults(func=_cmd_run)
 

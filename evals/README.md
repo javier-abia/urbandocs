@@ -94,6 +94,23 @@ uv run urbandocs-evals run --set easy
 uv run urbandocs-evals run --set complex
 ```
 
+### Comparing the workspace agent
+
+`--agent workspace` swaps the agent under test for the shape an architect's
+Codex would see behind the MCP: an outer agent (`EVAL_MODEL`) with a single
+`research` tool, backed by a worker (`EVAL_WORKER_MODEL`) that runs the real
+`search`/`get` loop. The worker's context keeps only the latest tool result;
+older ones shrink to a one-line log, every fetched record stays in an
+in-code workspace, and the reply is built from the records the worker
+`keep`s, verbatim. On top of the usual scores it records `worker_input_tokens`,
+`worker_output_tokens`, `worker_step_count` and `worker_peak_context_tokens`,
+so the two sides can be priced at their own model rates.
+
+```sh
+uv run urbandocs-evals run --set complex --experiment-name baseline
+uv run urbandocs-evals run --set complex --experiment-name workspace --agent workspace
+```
+
 Judge verdicts are **spot-checked by the owner**, not read exhaustively for
 every run (#85) — that's the tradeoff for being able to re-run this often.
 
@@ -115,6 +132,7 @@ evals/
 │   ├── config.py    # env -> Config, fail-loud
 │   ├── dataset.py   # gold-set CSVs -> Langfuse Dataset
 │   ├── agent.py      # the agent under test: LiteLLM model + real MCP toolset
+│   ├── workspace.py  # --agent workspace: outer `research` agent + context-trimming worker
 │   ├── judge.py       # the grading model: pass/fail, all-or-nothing
 │   ├── run.py          # one run_experiment() call: task + judge evaluator
 │   └── cli.py            # `upload-dataset` / `run`
